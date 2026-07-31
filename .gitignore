@@ -43,4 +43,8 @@ build/
 ### Project ###
 /wz/
 /json/
+/tools/
 *.db
+/start.ps1
+/server.log
+/build.log
