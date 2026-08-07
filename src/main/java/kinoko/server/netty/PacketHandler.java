@@ -50,7 +50,15 @@ public abstract class PacketHandler extends SimpleChannelInboundHandler<InPacket
                 if (handler.getParameterTypes()[0] == Client.class) {
                     handler.invoke(null, client, inPacket);
                 } else if (handler.getParameterTypes()[0] == User.class) {
-                    handler.invoke(null, client.getUser(), inPacket);
+                    final User user = client.getUser();
+                    if (user == null) {
+                        // 客户端没有 User —— 正在换频道迁移 / 尚未 MigrateIn / 连接已关闭。
+                        // 旧频道上客户端断开前发出的移动等包可能在此之后才被调度执行，
+                        // 此时 user 已被 Client.close() 置空，直接丢弃该包（不产生 NPE）。
+                        log.log(Level.TRACE, "Discarding user packet {}({}) on client without user", header, Util.opToString(op));
+                        return;
+                    }
+                    handler.invoke(null, user, inPacket);
                 } else {
                     throw new IllegalStateException("Handler with incorrect parameter types.");
                 }
