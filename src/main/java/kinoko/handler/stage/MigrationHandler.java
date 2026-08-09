@@ -259,7 +259,12 @@ public final class MigrationHandler {
 
         final Field currentField = user.getField();
         if (portalName.isEmpty()) {
-            if (user.getHp() <= 0) {
+            // 客户端复活请求判定（CUIRevive → SendTransferFieldRequest(0, "", bPremium)）：
+            // targetFieldId==0 且 portalName 空 = 复活弹窗发出的请求，无论服务端 HP 如何都应复活。
+            // 原因：mob→player 伤害由客户端本地预测（Controller 客户端未上报 UserHit 时服务端 HP 不下降），
+            // 客户端 HP=0 死亡但服务端 HP 仍 > 0，若仅按 user.getHp()<=0 判定则复活被跳过，
+            // 落入 handleTransferField(0) → 地图 0 不存在 → TransferFieldReqIgnored → 客户端永久卡死。
+            if (user.getHp() <= 0 || targetFieldId == 0) {
                 // Premium revive
                 if (premium) {
                     if (user.getSecondaryStat().hasOption(CharacterTemporaryStat.SoulStone)) {
