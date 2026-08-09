@@ -32,6 +32,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public final class UserPool extends FieldObjectPool<User> {
+    private static final org.apache.logging.log4j.Logger log = org.apache.logging.log4j.LogManager.getLogger(UserPool.class);
+
     public UserPool(Field field) {
         super(field);
     }
@@ -103,6 +105,11 @@ public final class UserPool extends FieldObjectPool<User> {
             } else {
                 user.write(MobPacket.mobChangeController(mob, false));
             }
+            // [MobDebug] 确认进图时每只怪物的控制器归属（排查"怪物不动"用）
+            log.debug("[MobDebug] addUser field={} user={} mob={} controller={} -> isLocal={}", field.getFieldId(),
+                    user.getCharacterName(), mob.getTemplateId(),
+                    mob.getController() != null ? mob.getController().getCharacterName() : "null",
+                    mob.getController() == user);
         });
         field.getNpcPool().forEach((npc) -> {
             user.write(NpcPacket.npcEnterField(npc));
@@ -161,6 +168,10 @@ public final class UserPool extends FieldObjectPool<User> {
         field.getMobPool().forEach((mob) -> {
             if (mob.getController() == user) {
                 assignController(mob);
+                // [MobDebug] 用户离开时怪物控制器重分配
+                log.debug("[MobDebug] removeUser field={} user={} reassignMob={} newController={}", field.getFieldId(),
+                        user.getCharacterName(), mob.getTemplateId(),
+                        mob.getController() != null ? mob.getController().getCharacterName() : "null");
             }
         });
         field.getNpcPool().forEach((npc) -> {

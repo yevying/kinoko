@@ -16,6 +16,8 @@ import java.util.*;
 import java.util.function.Consumer;
 
 public final class MobPool extends FieldObjectPool<Mob> {
+    private static final org.apache.logging.log4j.Logger log = org.apache.logging.log4j.LogManager.getLogger(MobPool.class);
+
     private final List<MobSpawnPoint> mobSpawnPoints;
     private final int mobCapacityMin;
     private final int mobCapacityMax;
@@ -40,6 +42,10 @@ public final class MobPool extends FieldObjectPool<Mob> {
             mob.setSummonType(MobAppearType.NORMAL.getValue());
         }
         field.getUserPool().assignController(mob);
+        // [MobDebug] 刷怪时的控制器分配（排查"怪物不动"用）
+        log.debug("[MobDebug] addMob field={} mob={} summonType={} controller={}", field.getFieldId(), mob.getTemplateId(),
+                mob.getSummonType(),
+                mob.getController() != null ? mob.getController().getCharacterName() : "null");
     }
 
     public synchronized boolean removeMob(Mob mob, MobLeaveType leaveType) {

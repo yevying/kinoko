@@ -1,10 +1,11 @@
-# Kinoko 服务端一键启动脚本
+﻿# Kinoko 服务端一键启动脚本
 # 用法：
 #   .\start.ps1                  默认启动（5 频道、调试模式、自动建账号）
 #   .\start.ps1 -Channels 2      仅启动 2 个频道
 #   .\start.ps1 -Debug $false    关闭调试日志
 #   .\start.ps1 -Build           重新构建后启动
-#   .\start.ps1 -NoLog           不写 server.log（仅控制台输出）
+#   .\start.ps1 -NoLog           不写日志文件（仅控制台输出）
+# 日志默认写入 logs\server_yyyyMMdd_HHmmss.log（按启动时间分文件）
 # 按 Ctrl+C 停止服务端
 
 param(
@@ -23,7 +24,7 @@ $MavenHome  = Join-Path $ScriptDir "tools\apache-maven-3.9.9"
 $JarPath    = Join-Path $ScriptDir "target\server.jar"
 $WzDir      = Join-Path $ScriptDir "wz"
 $DataDir    = Join-Path $ScriptDir "data"
-$LogFile    = Join-Path $ScriptDir "server.log"
+$LogDir     = Join-Path $ScriptDir "logs"
 
 # ===== 必需 WZ 文件 =====
 $RequiredWz = @(
@@ -131,6 +132,12 @@ Set-Location $ScriptDir
 if ($NoLog) {
     & $JavaExe -jar $JarPath
 } else {
+    # 日志按启动时间分文件存入 logs\ 目录，避免单一 server.log 无限增长。
+    # 每次启动生成 server_yyyyMMdd_HHmmss.log（例如 server_20260808_213000.log）。
+    if (-not (Test-Path $LogDir)) {
+        New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    }
+    $LogFile = Join-Path $LogDir ("server_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
     Write-Warn "Logging to: $LogFile"
     Write-Host ""
     & $JavaExe -jar $JarPath 2>&1 | Tee-Object -FilePath $LogFile
