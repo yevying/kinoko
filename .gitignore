@@ -67,3 +67,6 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ===== 临时调试脚本（不入库）=====
+data/check_quest.js

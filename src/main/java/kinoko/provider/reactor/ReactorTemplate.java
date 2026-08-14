@@ -42,9 +42,18 @@ public final class ReactorTemplate {
     }
 
     public int getLastState() {
-        final Optional<Integer> maxResult = states.keySet().stream()
-                .max(Comparator.comparingInt(Integer::valueOf));
-        return maxResult.orElse(0);
+        // The final state is the largest state reachable through the event chains,
+        // NOT merely the largest state key. e.g. 0002001 (Henesys box) has states 0-3
+        // but its state-3 HIT event has nextState=4, so lastState must be 4; otherwise
+        // isLastState() is never true and the reactor action/script never triggers.
+        int lastState = 0;
+        for (var entry : states.entrySet()) {
+            lastState = Math.max(lastState, entry.getKey());
+            for (ReactorEvent event : entry.getValue().getEvents()) {
+                lastState = Math.max(lastState, event.getNextState());
+            }
+        }
+        return lastState;
     }
 
     public Optional<ReactorEvent> getHitEvent(int state, int skillId) {

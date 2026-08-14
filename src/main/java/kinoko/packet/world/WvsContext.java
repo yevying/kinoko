@@ -189,10 +189,13 @@ public final class WvsContext {
         outPacket.encodeByte(false); // bIsMarried
         outPacket.encodeString(user.getGuildInfo().getGuildName()); // sCommunity
         outPacket.encodeString(user.getGuildInfo().getAllianceName()); // sAlliance
-        outPacket.encodeByte(false); // bMedalInfo
+        // bMedalInfo (matching reference: CUIUserInfo::SetCtrl_8B22B0 —
+        //   m_pBtCollection.SetEnable(m_pMedalInfo != 0)，装备勋章才启用收藏按钮)
+        final Inventory equipped = user.getInventoryManager().getEquipped();
+        final Item medalItem = equipped.getItem(BodyPart.MEDAL.getValue());
+        outPacket.encodeByte(medalItem != null); // bMedalInfo
 
         // CUIUserInfo::SetMultiPetInfo
-        final Inventory equipped = user.getInventoryManager().getEquipped();
         for (Pet pet : user.getPets()) {
             outPacket.encodeByte(true); // bPetActivated
             outPacket.encodeInt(pet.getTemplateId()); // dwTemplateId
@@ -207,7 +210,16 @@ public final class WvsContext {
         // ~CUIUserInfo::SetMultiPetInfo
 
         // CUIUserInfo::SetTamingMobInfo (bool -> int, int, int)
-        outPacket.encodeByte(false);
+        // 装备槽 TAMINGMOB(18) 有驯服怪物时才启用骑宠按钮（matching 095 SetCtrl_8B22B0
+        //   m_pBtTamingMob.SetEnable(m_bTamingMob)）。
+        final Item tamingMobItem = equipped.getItem(BodyPart.TAMINGMOB.getValue());
+        outPacket.encodeByte(tamingMobItem != null); // bHasTamingMob
+        if (tamingMobItem != null) {
+            // 095 时代驯服怪物有等级/经验/疲劳系统；kinoko 未实现该数据模型，先下发 0
+            outPacket.encodeInt(0); // nTamingMobLevel
+            outPacket.encodeInt(0); // nTamingMobExp
+            outPacket.encodeInt(0); // nTamingMobFatigue
+        }
 
         // aWishItem (byte * int), nCommSN = 0 becomes Brown Flight Headgear for some reason
         final List<Integer> wishlist = user.getAccount().getWishlist().stream()
@@ -217,7 +229,6 @@ public final class WvsContext {
         wishlist.forEach(outPacket::encodeInt);
 
         // MedalAchievementInfo::Decode
-        final Item medalItem = equipped.getItem(BodyPart.MEDAL.getValue());
         outPacket.encodeInt(medalItem != null ? medalItem.getItemId() : 0); // nEquipedMedalID
         final List<QuestRecord> titleQuestRecords = user.getQuestManager().getTitleQuests();
         outPacket.encodeShort(titleQuestRecords.size());

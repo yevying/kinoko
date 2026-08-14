@@ -116,7 +116,7 @@ public final class UserHandler {
         }
         user.setPortableChairId(itemId);
         user.getField().broadcastPacket(UserRemote.setActivePortableChair(user, itemId), user); // self-cast not required
-        user.dispose();
+        // 注意：不能调用 user.dispose() —— 原 kinoko 无条件断开，坐便携椅后玩家会被踢下线
     }
 
     @Handler(InHeader.UserChat)
@@ -899,6 +899,9 @@ public final class UserHandler {
                 // Quest complete effect
                 user.write(UserLocal.effect(Effect.questComplete()));
                 user.getField().broadcastPacket(UserRemote.effect(user, Effect.questComplete()), user);
+                // Quest clear notification — 客户端据此弹出"任务完成！"FadeYesNo
+                // (matching reference: 095 CWvsContext::OnQuestClear_9FA430)
+                user.write(QuestPacket.questClear(questId));
             }
             case ResignQuest -> {
                 final Optional<QuestRecord> questRecordResult = questInfo.resignQuest(user);

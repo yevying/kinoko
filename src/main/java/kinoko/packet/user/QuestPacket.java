@@ -57,6 +57,16 @@ public final class QuestPacket {
         return QuestPacket.of(QuestResultType.Failed_Meso);
     }
 
+    // QuestClear ------------------------------------------------------------------------------------------------------
+    // (matching reference: 095 CWvsContext::OnQuestClear_9FA430 — 仅 short questId，
+    //  客户端据此弹出"任务完成！"FadeYesNo 通知)
+
+    public static OutPacket questClear(int questId) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.QuestClear);
+        outPacket.encodeShort(questId);
+        return outPacket;
+    }
+
     private static OutPacket of(QuestResultType resultType) {
         final OutPacket outPacket = OutPacket.of(OutHeader.UserQuestResult);
         outPacket.encodeByte(resultType.getValue());

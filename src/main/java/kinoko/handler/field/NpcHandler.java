@@ -30,7 +30,10 @@ public final class NpcHandler {
         }
         final Npc npc = npcResult.get();
 
-        final MovePath movePath = npc.isMove() ? MovePath.decode(inPacket) : null;
+        // MovePath 头部固定 9 字节（4×short + byte count）。若客户端在 bMove 状态下
+        // 因故未附带 MovePath（如模板判定不一致或旧版本客户端），剩余不足时直接跳过解码，
+        // 避免 BufferUnderflowException 崩溃（matching reference: 095 客户端始终 Flush MovePath）。
+        final MovePath movePath = npc.isMove() && inPacket.getRemaining() >= 9 ? MovePath.decode(inPacket) : null;
         if (movePath != null) {
             movePath.applyTo(npc);
         }
