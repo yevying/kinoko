@@ -863,14 +863,15 @@ public final class UserHandler {
             case AcceptQuest -> {
                 final int templateId = inPacket.decodeInt(); // dwNpcTemplateID
                 final int itemPos = inPacket.decodeInt(); // CWvsContext.m_nQuestDeliveryItemPos
-                if (!questInfo.isAutoAlert()) {
-                    final short x = inPacket.decodeShort(); // ptUserPos.x
-                    final short y = inPacket.decodeShort(); // ptUserPos.y
-                }
+                // 本客户端（Godot）始终编码 ptUserPos，与是否 autoAlert 无关（QuestSender）。
+                // 统一始终读取 x/y 以对齐包格式。
+                final short x = inPacket.decodeShort(); // ptUserPos.x
+                final short y = inPacket.decodeShort(); // ptUserPos.y
                 final Optional<QuestRecord> startQuestResult = questInfo.startQuest(user);
                 if (startQuestResult.isEmpty()) {
-                    log.error("Failed to accept quest : {}", questId);
-                    user.dispose();
+                    // 开始条件未满足：startQuest 已写失败包，保持连接让客户端知晓失败原因，
+                    // 不再 user.dispose()（避免"点击接取→掉线"）。
+                    log.warn("Failed to accept quest : {} (conditions not met)", questId);
                     return;
                 }
                 user.write(MessagePacket.questRecord(startQuestResult.get()));
@@ -880,15 +881,17 @@ public final class UserHandler {
             case CompleteQuest -> {
                 final int templateId = inPacket.decodeInt(); // dwNpcTemplateID
                 final int itemPos = inPacket.decodeInt(); // CWvsContext.m_nQuestDeliveryItemPos
-                if (!questInfo.isAutoAlert()) {
-                    final short x = inPacket.decodeShort(); // ptUserPos.x
-                    final short y = inPacket.decodeShort(); // ptUserPos.y
-                }
+                // 本客户端（Godot）始终编码 ptUserPos（QuestSender::SendCompleteQuest），与是否
+                // autoAlert 无关。若按 isAutoAlert() 条件跳过读取，rewardIndex 会从 x/y 字节错位
+                // 读出 → 奖励索引/道具条件误判 → 完成被拒。统一始终读取 x/y 以对齐包格式。
+                final short x = inPacket.decodeShort(); // ptUserPos.x
+                final short y = inPacket.decodeShort(); // ptUserPos.y
                 final int rewardIndex = inPacket.decodeInt(); // nIdx - for selecting reward
                 final Optional<Tuple<QuestRecord, Integer>> questCompleteResult = questInfo.completeQuest(user, rewardIndex);
                 if (questCompleteResult.isEmpty()) {
-                    log.error("Failed to complete quest : {}", questId);
-                    user.dispose();
+                    // 完成条件未满足：completeQuest 已写失败包，保持连接让客户端知晓失败原因，
+                    // 不再 user.dispose()（避免"点击完成→掉线→重登任务回退"）。
+                    log.warn("Failed to complete quest : {} (conditions not met)", questId);
                     return;
                 }
                 final QuestRecord questRecord = questCompleteResult.get().getLeft();

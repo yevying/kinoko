@@ -138,6 +138,8 @@ public final class QuestInfo {
     public Optional<QuestRecord> startQuest(User user) {
         // Check that the quest can be started
         if (!canStartQuest(user)) {
+            // 条件未满足：写失败包，让客户端知晓接取失败（配合 handler 不再 dispose）
+            user.write(QuestPacket.failedUnknown());
             return Optional.empty();
         }
         for (QuestAct startAct : getStartActs()) {
@@ -175,6 +177,9 @@ public final class QuestInfo {
     public Optional<Tuple<QuestRecord, Integer>> completeQuest(User user, int rewardIndex) {
         // Check that the quest can be completed
         if (!canCompleteQuest(user)) {
+            // 完成条件未满足（道具/怪物/等级等）：写失败包，让客户端知晓完成失败，
+            // 配合 handler 不再 user.dispose()，任务保持进行中。
+            user.write(QuestPacket.failedUnknown());
             return Optional.empty();
         }
         for (QuestAct completeAct : getCompleteActs()) {

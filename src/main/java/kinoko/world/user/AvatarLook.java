@@ -120,10 +120,12 @@ public final class AvatarLook implements Encodable {
             final int bodyPart = entry.getKey();
             final int itemId = entry.getValue().getItemId();
             if (bodyPart > BodyPart.HAIR.getValue() && bodyPart < BodyPart.EQUIPPED_END.getValue()) {
-                hairEquip.put(bodyPart, itemId);
+                if (isCharacterEquipBodyPart(bodyPart)) {
+                    hairEquip.put(bodyPart, itemId);
+                }
             } else if (bodyPart >= BodyPart.CASH_BASE.getValue() && bodyPart < BodyPart.CASH_END.getValue()) {
                 // Cash Equips (overwrite), sorted map gives us entries in ascending order
-                if (bodyPart != BodyPart.CASH_WEAPON.getValue()) {
+                if (bodyPart != BodyPart.CASH_WEAPON.getValue() && isCharacterEquipBodyPart(bodyPart - BodyPart.CASH_BASE.getValue())) {
                     hairEquip.put(bodyPart - BodyPart.CASH_BASE.getValue(), itemId);
                 }
             }
@@ -136,13 +138,32 @@ public final class AvatarLook implements Encodable {
         for (var entry : equipped.getItems().entrySet()) {
             final int bodyPart = entry.getKey();
             if (bodyPart > BodyPart.HAIR.getValue() && bodyPart < BodyPart.EQUIPPED_END.getValue()) {
-                final int itemId = entry.getValue().getItemId();
-                if (hairEquip.containsKey(bodyPart) && hairEquip.get(bodyPart) != itemId) {
-                    unseenEquip.put(bodyPart, itemId);
+                if (isCharacterEquipBodyPart(bodyPart)) {
+                    final int itemId = entry.getValue().getItemId();
+                    if (hairEquip.containsKey(bodyPart) && hairEquip.get(bodyPart) != itemId) {
+                        unseenEquip.put(bodyPart, itemId);
+                    }
                 }
             }
         }
         return unseenEquip;
+    }
+
+    /**
+     * Whether the body part is a character equip slot that belongs in the avatar look.
+     * (matching reference: 095 is_correct_bodypart — anHairEquip 仅包含角色穿戴槽位)
+     * <p>
+     * Pet equipment (PETWEAR, PETRING, PETABIL_*) and mount equipment (TAMINGMOB, SADDLE,
+     * MOBEQUIP) are stored in the equipped inventory at cash body parts but must NOT be
+     * encoded into the avatar look — the v95 client only supports character equip body
+     * parts in anHairEquip and will throw while processing unknown body parts (e.g. 46,
+     * PETABIL_IGNOREITEMS1), which surfaces as a ClientDumpLog error on SelectWorldResult.
+     */
+    private static boolean isCharacterEquipBodyPart(int bodyPart) {
+        return (bodyPart >= BodyPart.CAP.getValue() && bodyPart <= BodyPart.WEAPON.getValue())
+                || (bodyPart >= BodyPart.RING1.getValue() && bodyPart <= BodyPart.PENDANT.getValue() && bodyPart != BodyPart.PETWEAR.getValue())
+                || (bodyPart >= BodyPart.MEDAL.getValue() && bodyPart <= BodyPart.SHOULDER.getValue())
+                || bodyPart == BodyPart.EXT_PENDANT1.getValue();
     }
 
     private static int getPetId(Inventory cashInventory, long petSn) {
