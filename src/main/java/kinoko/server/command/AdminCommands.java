@@ -509,6 +509,8 @@ public final class AdminCommands {
         if (addItemResult.isPresent()) {
             user.write(WvsContext.inventoryOperation(addItemResult.get(), true));
             user.write(UserLocal.effect(Effect.gainItem(item)));
+            user.write(MessagePacket.system("Item created : %s (%d) x%d",
+                    StringProvider.getItemName(itemId), itemId, item.getQuantity()));
         } else {
             user.write(MessagePacket.system("Failed to add item ID %d (%d) to inventory", itemId, quantity));
         }

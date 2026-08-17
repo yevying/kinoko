@@ -44,8 +44,12 @@ public final class DropPool extends FieldObjectPool<Drop> {
             drop.setX(x);
             drop.setY(footholdResult.get().getYFromX(x));
         } else {
+            // No foothold below this position — this happens when a drop spreads over a platform
+            // edge into a bottomless gap (mob dies near an edge). Falling back to `y` would leave
+            // the drop floating at mob feet - DROP_HEIGHT in mid-air; land it at the map floor
+            // (lowest foothold Y) instead so it falls visibly to the bottom of the pit.
             drop.setX(x);
-            drop.setY(y);
+            drop.setY(field.getMapInfo().getRootBounds().getBottom());
         }
         drop.setField(field);
         drop.setId(field.getNewObjectId());
