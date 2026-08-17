@@ -109,7 +109,12 @@ public final class MobHandler {
         final boolean nextAttackPossible = (mai.actionMask & 0x1) != 0;
         final Optional<MobSkill> nextSkillResult = nextAttackPossible ? mob.getNextSkill() : Optional.empty();
         user.write(MobPacket.mobCtrlAck(mob, mobCtrlSn, nextAttackPossible, nextSkillResult.orElse(null)));
-        field.broadcastPacket(MobPacket.mobMove(mob, mai, movePath), user);
+        // 空移动路径（count=0）不广播：无任何移动信息，广播出去会导致原版 095 客户端
+        // 处理 MobMove 时闪退（Error 0 | MobMove → Connection reset）。防御性兜底——
+        // 控制器客户端（如 Godot）已保证不发送空路径，此处确保任何空路径都不会到达其他客户端。
+        if (!movePath.getElems().isEmpty()) {
+            field.broadcastPacket(MobPacket.mobMove(mob, mai, movePath), user);
+        }
     }
 
     @Handler(InHeader.MobApplyCtrl)
