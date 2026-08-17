@@ -863,10 +863,13 @@ public final class UserHandler {
             case AcceptQuest -> {
                 final int templateId = inPacket.decodeInt(); // dwNpcTemplateID
                 final int itemPos = inPacket.decodeInt(); // CWvsContext.m_nQuestDeliveryItemPos
-                // 本客户端（Godot）始终编码 ptUserPos，与是否 autoAlert 无关（QuestSender）。
-                // 统一始终读取 x/y 以对齐包格式。
-                final short x = inPacket.decodeShort(); // ptUserPos.x
-                final short y = inPacket.decodeShort(); // ptUserPos.y
+                // 本客户端（Godot）始终编码 ptUserPos，与是否 autoAlert 无关（QuestSender）；
+                // 但原版 095 客户端仅在非 autoAlert 任务才编码 x/y。按剩余字节数判断：
+                // 有则读取（Godot / 手动任务），无则跳过（原版 autoAlert），避免 BufferUnderflow。
+                if (inPacket.getRemaining() >= 4) {
+                    inPacket.decodeShort(); // ptUserPos.x
+                    inPacket.decodeShort(); // ptUserPos.y
+                }
                 final Optional<QuestRecord> startQuestResult = questInfo.startQuest(user);
                 if (startQuestResult.isEmpty()) {
                     // 开始条件未满足：startQuest 已写失败包，保持连接让客户端知晓失败原因，
@@ -881,11 +884,12 @@ public final class UserHandler {
             case CompleteQuest -> {
                 final int templateId = inPacket.decodeInt(); // dwNpcTemplateID
                 final int itemPos = inPacket.decodeInt(); // CWvsContext.m_nQuestDeliveryItemPos
-                // 本客户端（Godot）始终编码 ptUserPos（QuestSender::SendCompleteQuest），与是否
-                // autoAlert 无关。若按 isAutoAlert() 条件跳过读取，rewardIndex 会从 x/y 字节错位
-                // 读出 → 奖励索引/道具条件误判 → 完成被拒。统一始终读取 x/y 以对齐包格式。
-                final short x = inPacket.decodeShort(); // ptUserPos.x
-                final short y = inPacket.decodeShort(); // ptUserPos.y
+                // 同 AcceptQuest：原版 095 客户端在 autoAlert 任务不编码 x/y，包内仅剩 rewardIndex(4 字节)。
+                // 剩余 >= 8 表示带 x/y + rewardIndex，否则仅 rewardIndex —— 兼容 Godot（恒带位置）与原版两种包。
+                if (inPacket.getRemaining() >= 8) {
+                    inPacket.decodeShort(); // ptUserPos.x
+                    inPacket.decodeShort(); // ptUserPos.y
+                }
                 final int rewardIndex = inPacket.decodeInt(); // nIdx - for selecting reward
                 final Optional<Tuple<QuestRecord, Integer>> questCompleteResult = questInfo.completeQuest(user, rewardIndex);
                 if (questCompleteResult.isEmpty()) {
