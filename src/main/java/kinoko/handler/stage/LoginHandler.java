@@ -387,7 +387,8 @@ public final class LoginHandler {
             c.write(LoginPacket.deleteCharacterResult(LoginResultType.Unknown, characterId));
             return;
         }
-        if (!DatabaseManager.accountAccessor().checkPassword(account, secondaryPassword, true)) {
+        if (!DatabaseManager.accountAccessor().checkPassword(account, secondaryPassword, true)
+                && ServerConfig.REQUIRE_SECONDARY_PASSWORD) {
             c.write(LoginPacket.deleteCharacterResult(LoginResultType.IncorrectSPW, characterId));
             return;
         }
