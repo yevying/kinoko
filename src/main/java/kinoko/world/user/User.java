@@ -498,6 +498,13 @@ public final class User extends Life {
             write(WvsContext.temporaryStatSet(getSecondaryStat(), flag, delay));
             getField().broadcastPacket(UserRemote.temporaryStatSet(this, getSecondaryStat(), flag), this);
         }
+        // MaxHP/MaxMP 变更（如 Hyper Body 超级体力 1301007）→ 补发 UserHP，刷新队员客户端
+        // 中该玩家头顶血条。kinoko 只在 setHp 时广播 receiveHp，而临时 stat 改 MaxHP 后
+        // HP 未超过新上限不会触发 setHp，故需在此显式补发。
+        // (matching reference: 095 CUser::OnStatChanged — MaxHP/MaxMP 变更同步 ShowGauge)
+        if (containsMaxHpMp(setStats.keySet())) {
+            broadcastPartyHp();
+        }
     }
 
     public void resetTemporaryStat(int skillId) {
@@ -518,7 +525,26 @@ public final class User extends Life {
                 write(WvsContext.temporaryStatReset(flag));
                 getField().broadcastPacket(UserRemote.temporaryStatReset(this, flag), this);
             }
+            // 重置含 MaxHP/MaxMP（Hyper Body 到期）→ 同样补发 UserHP 刷新头顶血条
+            if (containsMaxHpMp(resetStats)) {
+                broadcastPartyHp();
+            }
         }
+    }
+
+    /**
+     * 广播 UserHP（当前 HP/MaxHP）给同队伍成员，用于 MaxHP/MaxMP 临时 stat 变更后刷新
+     * 队员客户端中该玩家头顶血条（kinoko 仅 setHp 时广播，Hyper Body 改 MaxHP 不经过 setHp）。
+     * forEachPartyMember 不含本人——本人血条由 opcode 31 本地重算驱动。
+     */
+    private void broadcastPartyHp() {
+        getField().getUserPool().forEachPartyMember(this, (member) -> {
+            member.write(UserRemote.receiveHp(this));
+        });
+    }
+
+    private static boolean containsMaxHpMp(Set<CharacterTemporaryStat> stats) {
+        return stats.contains(CharacterTemporaryStat.MaxHP) || stats.contains(CharacterTemporaryStat.MaxMP);
     }
 
     public void setSkillCooltime(int skillId, int cooltime) {
