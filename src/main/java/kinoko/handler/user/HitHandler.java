@@ -1,6 +1,7 @@
 package kinoko.handler.user;
 
 import kinoko.handler.Handler;
+import kinoko.packet.field.MobPacket;
 import kinoko.packet.user.SummonedPacket;
 import kinoko.packet.user.UserLocal;
 import kinoko.packet.user.UserRemote;
@@ -212,9 +213,10 @@ public final class HitHandler {
             if (mob.isBoss()) {
                 powerGuardDamage /= 2; // damage halved for boss
             }
-            final int finalDamage = mob.getFixedDamage() > 0 ? mob.getFixedDamage() : powerGuardDamage;
+            final int finalDamage = mob.getFixedDamage() > 0 ? mob.getFixedDamage() : Math.max(1, powerGuardDamage);
             // Process reflect damage and return amount to subtract from hit damage
             mob.damage(user, finalDamage, 0);
+            user.getField().broadcastPacket(MobPacket.mobDamaged(mob, finalDamage));
             return finalDamage;
         } else if (user.getSecondaryStat().hasOption(CharacterTemporaryStat.ManaReflection)) {
             // Mana Reflection - reflect si.getValue(SkillStat.x, nManaReflection) %

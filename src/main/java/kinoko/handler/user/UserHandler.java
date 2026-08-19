@@ -443,6 +443,16 @@ public final class UserHandler {
                     user.dispose();
                     return;
                 }
+                // Validate that cash/normal slot type matches the item's cash flag.
+                // Non-cash items must not be placed in cash slots, and cash items must not
+                // be placed in normal slots. This prevents, e.g., two normal weapons from
+                // coexisting (one in normal slot, one in cash slot).
+                // (matching reference: 95 CItemInfo::GetExclusiveWeaponShieldBodyPart — weapon mutual exclusion)
+                if (isCash != itemInfo.isCash()) {
+                    log.error("Slot cash mismatch for item ID {}: slot isCash={}, item isCash={}", item.getItemId(), isCash, itemInfo.isCash());
+                    user.dispose();
+                    return;
+                }
                 // Move exclusive body part equip item to inventory
                 final BodyPart exclusiveBodyPart = ItemConstants.getExclusiveEquipItemBodyPart(secondInventory, item.getItemId(), isCash);
                 if (exclusiveBodyPart != null) {

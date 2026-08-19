@@ -351,6 +351,14 @@ public final class ItemConstants {
         if (itemId / 10000 == 109 && weapon != null && weapon.getItemId() / 100000 == 14) {
             return BodyPart.WEAPON;
         }
+        // Weapon-vs-weapon exclusivity: if equipping any weapon and there's already
+        // a weapon in the same slot type (normal or cash), unequip the existing weapon.
+        // This prevents two normal weapons from coexisting (one in normal slot, another
+        // in cash slot) when the client incorrectly routes a non-cash weapon to the cash slot.
+        // (matching reference: 95 CItemInfo::GetExclusiveWeaponShieldBodyPart — weapon mutual exclusion)
+        if (isWeapon(itemId) && weapon != null) {
+            return BodyPart.WEAPON;
+        }
         return null;
     }
 
