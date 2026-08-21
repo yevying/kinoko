@@ -152,6 +152,17 @@ public final class Warrior extends SkillProcessor {
 
         final Field field = user.getField();
         switch (skillId) {
+            // MONSTER MAGNET (1121001/1321001) — CUserLocal::TryDoingMonsterMagnet
+            // 专用包 opcode 103 已由 SkillHandler 解码 targetIds/left；只对非 Boss 施加 Stun
+            // （MobStatSet 广播 → 其他客户端怪物头顶旋转星星），不扣血、不广播攻击包。
+            case MONSTER_MAGNET_HERO:
+            case MONSTER_MAGNET_DRK:
+                skill.forEachAffectedMob(field, (mob) -> {
+                    if (!mob.isBoss()) {
+                        mob.setTemporaryStat(MobTemporaryStat.Stun, MobStatOption.of(1, skill.skillId, si.getDuration(skill.slv)), 0);
+                    }
+                });
+                return;
             // COMMON
             case POWER_GUARD_HERO:
             case POWER_GUARD_PALADIN:
