@@ -1,11 +1,13 @@
 package kinoko.world.job.explorer;
 
+import kinoko.packet.field.MobPacket;
 import kinoko.packet.user.UserLocal;
 import kinoko.packet.user.UserRemote;
 import kinoko.provider.SkillProvider;
 import kinoko.provider.skill.SkillInfo;
 import kinoko.provider.skill.SkillStat;
 import kinoko.util.Util;
+import kinoko.world.GameConstants;
 import kinoko.world.field.Field;
 import kinoko.world.field.mob.Mob;
 import kinoko.world.field.mob.MobStatOption;
@@ -18,6 +20,7 @@ import kinoko.world.skill.Skill;
 import kinoko.world.skill.SkillProcessor;
 import kinoko.world.user.User;
 import kinoko.world.user.effect.Effect;
+import kinoko.world.user.stat.CalcDamage;
 import kinoko.world.user.stat.CharacterTemporaryStat;
 import kinoko.world.user.stat.TemporaryStatOption;
 
@@ -153,13 +156,18 @@ public final class Warrior extends SkillProcessor {
         final Field field = user.getField();
         switch (skillId) {
             // MONSTER MAGNET (1121001/1321001) — CUserLocal::TryDoingMonsterMagnet
-            // 专用包 opcode 103 已由 SkillHandler 解码 targetIds/left；只对非 Boss 施加 Stun
-            // （MobStatSet 广播 → 其他客户端怪物头顶旋转星星），不扣血、不广播攻击包。
+            // 专用包 opcode 103 已由 SkillHandler 解码 targetIds/left。对非 Boss 目标：
+            //   1) 施加 Stun（MobStatSet 广播 → 其他客户端怪物头顶旋转星星）
+            //   2) 服务端计算伤害并扣血 + 广播 MobDamaged（原版磁铁会造成伤害；
+            //      伤害数字由 MobDamaged 驱动 Godot/原版客户端显示，不走 UserRemote.attack）
             case MONSTER_MAGNET_HERO:
             case MONSTER_MAGNET_DRK:
+                final int magnetDamage = (int) Math.clamp(CalcDamage.calcDamageMax(user) * si.getValue(SkillStat.damage, slv) / 100, 1.0, GameConstants.DAMAGE_MAX);
                 skill.forEachAffectedMob(field, (mob) -> {
                     if (!mob.isBoss()) {
                         mob.setTemporaryStat(MobTemporaryStat.Stun, MobStatOption.of(1, skill.skillId, si.getDuration(skill.slv)), 0);
+                        mob.damage(user, magnetDamage, 0);
+                        field.broadcastPacket(MobPacket.mobDamaged(mob, magnetDamage));
                     }
                 });
                 return;

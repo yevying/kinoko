@@ -54,8 +54,8 @@ public final class SkillHandler {
         // MONSTER MAGNET (1121001/1321001) — CUserLocal::TryDoingMonsterMagnet
         // 专用磁铁包格式（与通用 buff 包不同）：tCur(4) + skillId(4) + slv(1)
         //   + nRange(4) + [mobId(4) + bMove(1)]×N + bLeft(1)，完全不含伤害值。
-        // 服务端只对非 Boss 施加 Stun + 广播 MobStatSet，不扣血、不广播 UserRemote.attack，
-        // 使原版客户端不再看到磁铁造成的"正常伤害 + 0/miss"双重显示。
+        // 服务端在 Warrior.handleSkill 中对目标施加 Stun + 计算伤害并广播 MobDamaged
+        // （matching 095 原版：磁铁造成伤害，伤害数字由 MobDamaged 驱动显示）。
         if (skill.skillId == Warrior.MONSTER_MAGNET_HERO || skill.skillId == Warrior.MONSTER_MAGNET_DRK) {
             final int targetCount = inPacket.decodeInt(); // nRange (Encode4)
             skill.targetIds = new int[targetCount];
