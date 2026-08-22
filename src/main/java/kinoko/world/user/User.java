@@ -375,12 +375,19 @@ public final class User extends Life {
     }
 
     public void setHp(int hp) {
+        final boolean wasAlive = getHp() > 0;
         getCharacterStat().setHp(Math.clamp(hp, 0, getMaxHp()));
         write(WvsContext.statChanged(Stat.HP, getHp(), false));
         // Update party
         getField().getUserPool().forEachPartyMember(this, (member) -> {
             member.write(UserRemote.receiveHp(this));
         });
+        // 死亡/复活（HP 穿越 0）时广播 UserHP 给同地图所有玩家（含非队员），
+        // 让远程客户端（含原版 095 CUserPool::OnUserHP）触发死亡动画/清除墓碑。
+        // 仅 party 广播时，非队员远程客户端收不到死亡上报 → 看不到死亡动画。
+        if (wasAlive != (getHp() > 0)) {
+            getField().broadcastPacket(UserRemote.receiveHp(this), this);
+        }
     }
 
     public void addHp(int hp) {

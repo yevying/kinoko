@@ -133,9 +133,11 @@ public final class QuestItemAct implements QuestAct {
         }
 
         // Handle required slots for choice items
-        if (rewardIndex >= 0) {
-            final List<QuestItemData> filteredChoices = getFilteredChoices(user.getGender(), user.getJob());
-            if (filteredChoices.size() < rewardIndex) {
+        // rewardIndex >= 0 表示客户端声称选择了奖励项；无选择奖励时客户端应发 -1，
+        // 但防御性处理：choices 为空（任务无可选奖励）时忽略 rewardIndex，避免越界崩溃。
+        final List<QuestItemData> filteredChoices = getFilteredChoices(user.getGender(), user.getJob());
+        if (rewardIndex >= 0 && !filteredChoices.isEmpty()) {
+            if (filteredChoices.size() <= rewardIndex) {
                 user.write(QuestPacket.failedUnknown());
                 return false;
             }
@@ -193,9 +195,10 @@ public final class QuestItemAct implements QuestAct {
         }
 
         // Give choice item
-        if (rewardIndex >= 0) {
-            final List<QuestItemData> filteredChoices = getFilteredChoices(user.getGender(), user.getJob());
-            if (filteredChoices.size() < rewardIndex) {
+        // 与 canAct 一致：无选择奖励（choices 空）时忽略 rewardIndex，不进入该分支。
+        final List<QuestItemData> filteredChoices = getFilteredChoices(user.getGender(), user.getJob());
+        if (rewardIndex >= 0 && !filteredChoices.isEmpty()) {
+            if (filteredChoices.size() <= rewardIndex) {
                 return false;
             }
             final QuestItemData choiceItemData = filteredChoices.get(rewardIndex);

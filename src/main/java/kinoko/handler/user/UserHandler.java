@@ -623,6 +623,23 @@ public final class UserHandler {
         }
     }
 
+    @Handler(InHeader.UserHP)
+    public static void handleUserHp(User user, InPacket inPacket) {
+        // 客户端本地死亡上报（095 CUserLocal::OnSetDead 发送 UserHP=59）。
+        // 联机模式 Godot 客户端本地 HP 跌 0 时发送 UserHP(0, maxHp) 通知服务端，
+        // 服务端据此 setHp(0) → User.setHp 广播 UserRemote.receiveHp(227) 给同地图玩家，
+        // 让远程客户端（含原版 095 CUserPool::OnUserHP）触发死亡动画。
+        // 此前缺失该 handler，客户端死亡上报被当作 "Unhandled header" 丢弃，
+        // 服务端永不 setHp(0) → 远程玩家看不到死亡动画。
+        final int hp = inPacket.decodeInt(); // nHP
+        final int maxHp = inPacket.decodeInt(); // nMaxHP
+        if (hp < 0 || hp > user.getMaxHp()) {
+            log.warn("Invalid HP report from user {} : hp={}, maxHp={}", user.getCharacterName(), hp, maxHp);
+            return;
+        }
+        user.setHp(hp);
+    }
+
     @Handler(InHeader.UserSkillUpRequest)
     public static void handleUserSkillUpRequest(User user, InPacket inPacket) {
         inPacket.decodeInt(); // update_time
