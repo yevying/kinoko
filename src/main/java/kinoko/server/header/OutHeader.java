@@ -527,6 +527,9 @@ public enum OutHeader {
     ITCQueryCashResult(411),
     ITCNormalItemResult(412),
 
+    // Custom weather system (kinoko.weather) -- reuses the 401-404 gap
+    WeatherSync(401),
+
     LogoutGift(432),
     NO(433);
 

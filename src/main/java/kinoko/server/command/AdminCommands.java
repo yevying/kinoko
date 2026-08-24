@@ -48,6 +48,10 @@ import kinoko.world.user.User;
 import kinoko.world.user.effect.Effect;
 import kinoko.world.user.stat.*;
 
+import kinoko.weather.WeatherProfile;
+import kinoko.weather.WeatherService;
+import kinoko.weather.WeatherTask;
+
 import java.lang.reflect.Method;
 import java.util.*;
 
@@ -1011,5 +1015,152 @@ public final class AdminCommands {
     @Command({ "reloadcashshop", "reloadcs" })
     public static void reloadCashShop(User user, String[] args) {
         CashShop.initialize();
+    }
+
+    /**
+     * {@code !weather} - inspect and force the world time and sky (matching reference
+     * WeatherCommand.java). Time and sky are two independent axes, so any word from either
+     * can be given alone or together, in any order:
+     * <pre>
+     *   !weather                     what time it is and what the sky is doing
+     *   !weather day|dusk|night|dawn force the TIME (freezes the clock)
+     *   !weather clear|rain|snow|... force the WEATHER (any WeatherProfile name)
+     *   !weather night rain          both, in either order
+     *   !weather 21:30               freeze the clock at an exact time
+     *   !weather auto                release both and hand the world back
+     * </pre>
+     * Both overrides apply to the WHOLE WORLD, expire after OVERRIDE_HOLD_MS, and are
+     * ignored by maps with no sky.
+     */
+    @Command("weather")
+    public static void weather(User user, String[] args) {
+        if (args.length == 1) {
+            reportWeather(user);
+            return;
+        }
+
+        Byte sky = null;
+        Integer time = null;
+        boolean bareSky = false;
+
+        for (int i = 1; i < args.length; i++) {
+            final String arg = args[i].toLowerCase();
+
+            final WeatherProfile p = WeatherProfile.byName(arg);
+            if (p != null) {
+                sky = p.id();
+                continue;
+            }
+
+            switch (arg) {
+                case "sunny":
+                    sky = WeatherProfile.CLEAR.id();
+                    continue;
+                case "rainy":
+                    sky = WeatherProfile.RAIN.id();
+                    continue;
+                case "snowy":
+                    sky = WeatherProfile.SNOW.id();
+                    continue;
+                case "day":
+                case "noon":
+                    time = WeatherService.TIME_DAY;
+                    continue;
+                case "night":
+                    time = WeatherService.TIME_NIGHT;
+                    continue;
+                case "midnight":
+                    // Full night AND the map's own sky hidden, so only the moon and the
+                    // starfields are left (matching reference WeatherCommand).
+                    time = WeatherService.TIME_NIGHT;
+                    bareSky = true;
+                    continue;
+                case "dawn":
+                case "sunrise":
+                    time = WeatherService.TIME_DAWN;
+                    continue;
+                case "dusk":
+                case "sunset":
+                    time = WeatherService.TIME_DUSK;
+                    continue;
+                case "auto":
+                    WeatherService.clearTimeOverride();
+                    WeatherService.clearSkyOverride();
+                    WeatherTask.broadcast(user.getConnectedServer());
+                    user.write(MessagePacket.system("Time and weather handed back to the world."));
+                    return;
+                default:
+                    break;
+            }
+
+            final Integer parsed = parseClock(arg);
+            if (parsed == null) {
+                user.write(MessagePacket.system("Unknown option '%s'.", args[i]));
+                user.write(MessagePacket.system("Usage: !weather [day|dusk|night|midnight|dawn] [%s] | HH:MM | auto",
+                        WeatherProfile.namesForUsage()));
+                return;
+            }
+            time = parsed;
+        }
+
+        if (time != null) {
+            WeatherService.setTime(time);
+            // Bare sky is a midnight preview, not an independent sticky weather mode.
+            WeatherService.setBareSky(bareSky);
+        }
+        if (sky != null) {
+            WeatherService.setSky(sky, WeatherService.OVERRIDE_HOLD_MS);
+        }
+
+        // Un-snapped: the point of forcing it from in game is to watch it fade.
+        WeatherTask.broadcast(user.getConnectedServer());
+        reportWeather(user);
+    }
+
+    @Command("night")
+    public static void night(User user, String[] args) {
+        WeatherService.setBareSky(false);
+        WeatherService.setTime(WeatherService.TIME_NIGHT);
+        WeatherTask.broadcast(user.getConnectedServer());
+        user.write(MessagePacket.system("World time set to night. Use !weather auto to resume it."));
+    }
+
+    private static void reportWeather(User user) {
+        final String clock = WeatherService.clockString();
+        final boolean frozen = WeatherService.isTimeOverridden();
+        user.write(MessagePacket.system("Time %s %s, night level %.2f", clock,
+                frozen ? "(FROZEN)" : "(running)", WeatherService.nightLevel()));
+        user.write(MessagePacket.system("Sky: %s %s", WeatherService.skyName(WeatherService.currentSky()),
+                WeatherService.isOverridden() ? "(forced)" : "(automatic)"));
+        if (frozen || WeatherService.isOverridden()) {
+            user.write(MessagePacket.system("!weather auto to hand it back."));
+        } else {
+            user.write(MessagePacket.system("Usage: !weather [day|dusk|night|dawn] [%s] | HH:MM | auto",
+                    WeatherProfile.namesForUsage()));
+        }
+    }
+
+    /** "21:30" or "2130" or "21" to in-game minutes, or null if it is not a clock. */
+    private static Integer parseClock(String s) {
+        try {
+            int h;
+            int m = 0;
+            final int colon = s.indexOf(':');
+            if (colon >= 0) {
+                h = Integer.parseInt(s.substring(0, colon));
+                m = Integer.parseInt(s.substring(colon + 1));
+            } else if (s.length() == 4) {
+                h = Integer.parseInt(s.substring(0, 2));
+                m = Integer.parseInt(s.substring(2));
+            } else {
+                h = Integer.parseInt(s);
+            }
+            if (h < 0 || h > 23 || m < 0 || m > 59) {
+                return null;
+            }
+            return h * 60 + m;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

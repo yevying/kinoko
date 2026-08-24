@@ -23,6 +23,7 @@ import kinoko.server.packet.OutPacket;
 import kinoko.server.party.PartyRequest;
 import kinoko.server.user.RemoteUser;
 import kinoko.server.user.SpeakerManager;
+import kinoko.weather.WeatherTask;
 import kinoko.world.field.Field;
 import kinoko.world.user.User;
 import org.apache.logging.log4j.LogManager;
@@ -256,6 +257,8 @@ public final class ChannelServerNode extends ServerNode {
         // Initialize channel server classes
         speakerManager.initialize(clientStorage);
         eventManager.initialize(fieldStorage);
+        // Register the periodic weather broadcast + re-roll for this channel
+        WeatherTask.initialize(this);
 
         // Start channel server
         final ChannelServerNode self = this;

@@ -24,6 +24,7 @@ import kinoko.server.node.ServerExecutor;
 import kinoko.server.packet.OutPacket;
 import kinoko.server.party.PartyRequest;
 import kinoko.util.BitFlag;
+import kinoko.weather.WeatherPackets;
 import kinoko.world.GameConstants;
 import kinoko.world.field.Field;
 import kinoko.world.field.OpenGate;
@@ -870,6 +871,9 @@ public final class User extends Life {
 
     private void completeWarp(Field destination, boolean isMigrate, boolean isRevive) {
         write(StagePacket.setField(this, getChannelId(), isMigrate, isRevive));
+        // The weather sync is sent snapped so the client does not fade from day to night
+        // after every portal. getField() is already the destination here (set in warp()).
+        write(WeatherPackets.weatherSync(getFieldId(), true));
         destination.addUser(this);
         getConnectedServer().notifyUserUpdate(this);
     }
