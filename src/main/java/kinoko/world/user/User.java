@@ -29,6 +29,8 @@ import kinoko.world.field.Field;
 import kinoko.world.field.OpenGate;
 import kinoko.world.field.TownPortal;
 import kinoko.world.field.life.Life;
+import kinoko.world.field.life.MoveElem;
+import kinoko.world.field.life.MovePath;
 import kinoko.world.field.summoned.Summoned;
 import kinoko.world.field.summoned.SummonedLeaveType;
 import kinoko.world.item.InventoryManager;
@@ -81,11 +83,13 @@ public final class User extends Life {
     private String adBoard;
     private boolean inTransfer;
     private Instant nextCheckItemExpire;
+    private Instant nextIdleRecovery;
 
     public User(Client client, CharacterData characterData) {
         this.client = client;
         this.characterData = characterData;
         this.nextCheckItemExpire = Instant.MIN;
+        this.nextIdleRecovery = Instant.MIN;
     }
 
     public Client getClient() {
@@ -356,6 +360,14 @@ public final class User extends Life {
         this.nextCheckItemExpire = nextCheckItemExpire;
     }
 
+    public Instant getNextIdleRecovery() {
+        return nextIdleRecovery;
+    }
+
+    public void setNextIdleRecovery(Instant nextIdleRecovery) {
+        this.nextIdleRecovery = nextIdleRecovery;
+    }
+
     // STAT METHODS ----------------------------------------------------------------------------------------------------
 
     public int getGender() {
@@ -382,12 +394,32 @@ public final class User extends Life {
         getField().getUserPool().forEachPartyMember(this, (member) -> {
             member.write(UserRemote.receiveHp(this));
         });
-        // 死亡/复活（HP 穿越 0）时广播 UserHP 给同地图所有玩家（含非队员），
-        // 让远程客户端（含原版 095 CUserPool::OnUserHP）触发死亡动画/清除墓碑。
+        // 死亡/复活（HP 穿越 0）时广播 UserHP 给同地图所有玩家（含非队员）。
         // 仅 party 广播时，非队员远程客户端收不到死亡上报 → 看不到死亡动画。
         if (wasAlive != (getHp() > 0)) {
             getField().broadcastPacket(UserRemote.receiveHp(this), this);
+            // 广播死亡/复活动作（UserMove 210）：原版 095 客户端 UserHP(227) 只更新队伍血条
+            // （CUserRemote::OnReceiveHP_953F50），不触发死亡；墓碑仅本地显示
+            // （CUserLocal::OnSetDead_903FC0 → CUser::OnSetDead_8E4250），无法通过封包同步。
+            // 因此额外广播携带死亡动作（nMA 18/19 → raw 47 "dead"）的移动路径，
+            // 让远程 095 客户端至少渲染倒地尸体；HP 恢复时广播站立动作（raw "stand1"）清除尸体。
+            getField().broadcastPacket(UserRemote.move(this, getAliveStatusMovePath(getHp() > 0)), this);
         }
+    }
+
+    private MovePath getAliveStatusMovePath(boolean alive) {
+        final int moveAction = alive ? 4 | (getMoveAction() & 1) : 18 | (getMoveAction() & 1);
+        final MoveElem elem = new MoveElem((byte) 0); // NORMAL
+        elem.setX((short) getX());
+        elem.setY((short) getY());
+        elem.setVx((short) 0);
+        elem.setVy((short) 0);
+        elem.setFh((short) getFoothold());
+        elem.setXOffset((short) 0);
+        elem.setYOffset((short) 0);
+        elem.setMoveAction((byte) moveAction);
+        elem.setElapse((short) 0);
+        return new MovePath((short) getX(), (short) getY(), (short) 0, (short) 0, List.of(elem));
     }
 
     public void addHp(int hp) {

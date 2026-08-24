@@ -42,6 +42,10 @@ import java.util.Set;
 public abstract class SkillProcessor {
     protected static final Logger log = LogManager.getLogger(SkillProcessor.class);
 
+    /** 站立静止自动回血：间隔秒数与每次回复百分比（matching 客户端 UpdateIdleRegen 的 v95 口径）。 */
+    private static final int IDLE_RECOVERY_INTERVAL_SECONDS = 10;
+    private static final int IDLE_RECOVERY_PERCENT = 1;
+
 
     // PROCESS ATTACK --------------------------------------------------------------------------------------------------
 
@@ -534,11 +538,38 @@ public abstract class SkillProcessor {
         if (user.getHp() <= 0) {
             return;
         }
+        handleIdleRecovery(user, now);
         handleRecovery(user, now);
         handleDragonBlood(user, now);
         handleInfinity(user, now);
         handleAura(user, now);
         handleMissileTank(user, now);
+    }
+
+    /**
+     * 站立静止自动回复 HP/MP。
+     * (matching 095 服务端站立恢复；客户端 CharacterNode.UpdateIdleRegen 本地预测同样回血并显示绿色数字)
+     * 静止判定：最近 MovePath 的 moveAction 为 Stand（actionType=2 → moveAction&gt;&gt;1==2，与客户端
+     * GetActionType()==CharacterAction.Stand 的 stand1/stand2 对应）。每 10 秒回复 1% MaxHP/1% MaxMP。
+     * 仅通过 addHp/addMp 下发 statChanged 权威 HP/MP（保证联机不把本地预测回退），不下发
+     * incDecHpEffect，避免与客户端本地预测的治疗数字重复显示。
+     */
+    private static void handleIdleRecovery(User user, Instant now) {
+        final boolean standing = (user.getMoveAction() >> 1) == 2;
+        final boolean needsRecovery = user.getHp() < user.getMaxHp() || user.getMp() < user.getMaxMp();
+        if (!standing || !needsRecovery) {
+            // 非站立/满血时重置定时，恢复需连续站立满整个间隔
+            user.setNextIdleRecovery(now.plus(IDLE_RECOVERY_INTERVAL_SECONDS, ChronoUnit.SECONDS));
+            return;
+        }
+        if (now.isBefore(user.getNextIdleRecovery())) {
+            return;
+        }
+        user.setNextIdleRecovery(now.plus(IDLE_RECOVERY_INTERVAL_SECONDS, ChronoUnit.SECONDS));
+        final int hpRecovery = Math.max(1, user.getMaxHp() * IDLE_RECOVERY_PERCENT / 100);
+        final int mpRecovery = Math.max(1, user.getMaxMp() * IDLE_RECOVERY_PERCENT / 100);
+        user.addHp(hpRecovery);
+        user.addMp(mpRecovery);
     }
 
     private static void handleRecovery(User user, Instant now) {
