@@ -115,10 +115,12 @@ public final class MapProvider implements WzProvider {
                     linkInfo.isClock()
             ));
             mapLinks.put(mapId, link);
+            WeatherMapVisibility.registerLinked(mapId, link);
         }
     }
 
     private static MapInfo resolveMapInfo(int mapId, WzImage image, WzProperty infoProp, boolean clock) throws ProviderError {
+        WeatherMapVisibility.register(mapId, image.getProperty());
         final List<Rect> area = resolveArea(image.getProperty());
         final List<Foothold> foothold = resolveFoothold(image.getProperty());
         final List<LadderRope> ladderRope = resolveLadderRope(image.getProperty());

@@ -128,7 +128,7 @@ public final class WildHunter extends SkillProcessor {
                     return;
                 }
                 final Mob mob = targetResult.get();
-                mob.damage(user, mob.getHp(), 0, MobLeaveType.SWALLOW);
+                mob.damage(user, mob.getHp(), 0, MobLeaveType.SWALLOW, false); // HP-based kill: never night-scaled
                 return;
             case JAGUAR_OSHI_DIGESTED:
                 user.resetTemporaryStat(Set.of(CharacterTemporaryStat.Swallow_Mob, CharacterTemporaryStat.Swallow_Template));

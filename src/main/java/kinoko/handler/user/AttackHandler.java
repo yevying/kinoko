@@ -808,7 +808,7 @@ public final class AttackHandler {
         final double percentage = (double) mob.getHp() / mob.getMaxHp();
         if (percentage * 100 < si.getValue(SkillStat.x, slv)) {
             user.getField().broadcastPacket(MobPacket.mobSpecialEffectBySkill(mob, skillId, user.getCharacterId(), delay));
-            mob.damage(user, mob.getHp(), delay);
+            mob.damage(user, mob.getHp(), delay, false); // HP-based kill: never night-scaled
         }
     }
 

@@ -42,9 +42,9 @@ import java.util.Set;
 public abstract class SkillProcessor {
     protected static final Logger log = LogManager.getLogger(SkillProcessor.class);
 
-    /** 站立静止自动回血：间隔秒数与每次回复百分比（matching 客户端 UpdateIdleRegen 的 v95 口径）。 */
+    /** 站立静止自动回血：间隔秒数与每次回复量（v95 基础站定回血为固定值，matching 客户端 UpdateIdleRegen）。 */
     private static final int IDLE_RECOVERY_INTERVAL_SECONDS = 10;
-    private static final int IDLE_RECOVERY_PERCENT = 1;
+    private static final int IDLE_RECOVERY_AMOUNT = 10;
 
 
     // PROCESS ATTACK --------------------------------------------------------------------------------------------------
@@ -550,7 +550,8 @@ public abstract class SkillProcessor {
      * 站立静止自动回复 HP/MP。
      * (matching 095 服务端站立恢复；客户端 CharacterNode.UpdateIdleRegen 本地预测同样回血并显示绿色数字)
      * 静止判定：最近 MovePath 的 moveAction 为 Stand（actionType=2 → moveAction&gt;&gt;1==2，与客户端
-     * GetActionType()==CharacterAction.Stand 的 stand1/stand2 对应）。每 10 秒回复 1% MaxHP/1% MaxMP。
+     * GetActionType()==CharacterAction.Stand 的 stand1/stand2 对应）。每 10 秒回复固定 10 HP/10 MP
+     * （v95 基础站定回血为固定小值，非 MaxHP 百分比）。
      * 仅通过 addHp/addMp 下发 statChanged 权威 HP/MP（保证联机不把本地预测回退），不下发
      * incDecHpEffect，避免与客户端本地预测的治疗数字重复显示。
      */
@@ -566,8 +567,8 @@ public abstract class SkillProcessor {
             return;
         }
         user.setNextIdleRecovery(now.plus(IDLE_RECOVERY_INTERVAL_SECONDS, ChronoUnit.SECONDS));
-        final int hpRecovery = Math.max(1, user.getMaxHp() * IDLE_RECOVERY_PERCENT / 100);
-        final int mpRecovery = Math.max(1, user.getMaxMp() * IDLE_RECOVERY_PERCENT / 100);
+        final int hpRecovery = IDLE_RECOVERY_AMOUNT;
+        final int mpRecovery = IDLE_RECOVERY_AMOUNT;
         user.addHp(hpRecovery);
         user.addMp(mpRecovery);
     }

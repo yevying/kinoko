@@ -142,7 +142,7 @@ public final class Warrior extends SkillProcessor {
                 break;
             case BLAST:
                 if (!mob.isBoss() && Util.succeedProp(si.getValue(SkillStat.prop, slv))) {
-                    mob.damage(user, mob.getHp(), delay);
+                    mob.damage(user, mob.getHp(), delay, false); // HP-based kill: never night-scaled
                 }
                 break;
         }

@@ -23,6 +23,7 @@ import kinoko.world.field.mob.MobLeaveType;
 import kinoko.world.field.npc.Npc;
 import kinoko.world.field.reactor.Reactor;
 import kinoko.world.user.User;
+import kinoko.weather.NocturnalMobService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -376,6 +377,8 @@ public final class Field {
         if (fieldStorage instanceof InstanceFieldStorage instanceFieldStorage) {
             instanceFieldStorage.getInstance().addUser(user);
         }
+        // Map-entry hook for the nocturnal mob service (runs on the field executor)
+        NocturnalMobService.refreshField(this);
     }
 
     public synchronized void removeUser(User user) {

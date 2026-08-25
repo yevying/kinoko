@@ -10,6 +10,7 @@ import kinoko.util.BitFlag;
 import kinoko.util.Rect;
 import kinoko.world.GameConstants;
 import kinoko.world.field.mob.*;
+import kinoko.weather.WeatherCombat;
 
 import java.time.Instant;
 import java.util.*;
@@ -118,8 +119,8 @@ public final class MobPool extends FieldObjectPool<Mob> {
 
         final int userCount = field.getUserPool().getCount();
         for (MobSpawnPoint msp : shuffledSpawnPoints) {
-            // Check mob capacity
-            if (getCount() >= getMobCapacity(userCount)) {
+            // Check mob capacity (nocturnal ambient mobs do not count toward it)
+            if (getObjects().stream().filter(m -> !m.isNocturnal()).count() >= getMobCapacity(userCount)) {
                 break;
             }
             // Try spawn mob
@@ -138,15 +139,24 @@ public final class MobPool extends FieldObjectPool<Mob> {
     }
 
     private int getMobCapacity(int userCount) {
+        final int capacity;
         if (userCount > mobCapacityMin / 2) {
             if (userCount < mobCapacityMax) {
-                return mobCapacityMin + (((mobCapacityMax - mobCapacityMin) * (2 * userCount - mobCapacityMin)) / (3 * mobCapacityMin));
+                capacity = mobCapacityMin + (((mobCapacityMax - mobCapacityMin) * (2 * userCount - mobCapacityMin)) / (3 * mobCapacityMin));
             } else {
-                return mobCapacityMax;
+                capacity = mobCapacityMax;
             }
         } else {
-            return mobCapacityMin;
+            capacity = mobCapacityMin;
         }
+        // Night density multiplier folded into the effective capacity (daytime x1.0).
+        return (int) (capacity * WeatherCombat.spawnMultiplier());
+    }
+
+    /** Anchors for the nocturnal mob service: ordinary WZ spawn points that do not
+     *  auto-respawn (mobTime == 0). Coordinates are borrowed, never invented. */
+    public List<MobSpawnPoint> getNocturnalSpawnPoints() {
+        return mobSpawnPoints.stream().filter(sp -> sp.getMobTime() == 0).toList();
     }
 
     private static List<MobSpawnPoint> initializeMobSpawnPoints(Field field) {

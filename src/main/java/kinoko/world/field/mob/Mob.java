@@ -34,6 +34,7 @@ import kinoko.world.job.resistance.WildHunter;
 import kinoko.world.quest.QuestRecord;
 import kinoko.world.user.User;
 import kinoko.world.user.stat.CharacterTemporaryStat;
+import kinoko.weather.WeatherCombat;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -55,6 +56,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
     private int summonType;
     private int itemDropCount;
     private boolean slowUsed;
+    private boolean nocturnal;
     private int swallowCharacterId;
     private Reward stolenReward;
     private Instant nextSendMobHp;
@@ -216,6 +218,15 @@ public final class Mob extends Life implements ControlledObject, Encodable {
         this.slowUsed = slowUsed;
     }
 
+    /** Night-only ambient mobs are flagged once before spawn and never flipped. */
+    public boolean isNocturnal() {
+        return nocturnal;
+    }
+
+    public void setNocturnal(boolean nocturnal) {
+        this.nocturnal = nocturnal;
+    }
+
     public int getSwallowCharacterId() {
         return swallowCharacterId;
     }
@@ -368,12 +379,23 @@ public final class Mob extends Life implements ControlledObject, Encodable {
     }
 
     public void damage(User attacker, int totalDamage, int delay) {
-        damage(attacker, totalDamage, delay, MobLeaveType.ETC);
+        damage(attacker, totalDamage, delay, MobLeaveType.ETC, true);
+    }
+
+    public void damage(User attacker, int totalDamage, int delay, boolean weatherScaled) {
+        damage(attacker, totalDamage, delay, MobLeaveType.ETC, weatherScaled);
     }
 
     public void damage(User attacker, int totalDamage, int delay, MobLeaveType leaveType) {
-        // Apply damage and show mob hp indicator
-        final int actualDamage = Math.min(getHp(), totalDamage);
+        damage(attacker, totalDamage, delay, leaveType, true);
+    }
+
+    public void damage(User attacker, int totalDamage, int delay, MobLeaveType leaveType, boolean weatherScaled) {
+        // Apply damage and show mob hp indicator. Damage computed from the monster's current HP
+        // (e.g. leave-at-1HP / eat-the-rest skills) must bypass the night scalars so a "finish off"
+        // hit still lands exactly at dawn; pass weatherScaled=false for those.
+        final int scaled = weatherScaled ? WeatherCombat.scaleDamageToMonster(totalDamage) : totalDamage;
+        final int actualDamage = Math.min(getHp(), scaled);
         damageDone.put(attacker.getCharacterId(), damageDone.getOrDefault(attacker.getCharacterId(), 0) + actualDamage);
         updateHp(getHp() - actualDamage);
         // Handle death
@@ -428,7 +450,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
      */
     private void distributeExp() {
         // Calculate exp split based on damage dealt
-        final int totalExp = getExp();
+        final int totalExp = WeatherCombat.scaleExp(getExp());
         final Map<User, Integer> expSplit = new HashMap<>(); // user -> exp
         final Map<Integer, Set<User>> partyMembers = new HashMap<>(); // party id -> members
         for (var entry : damageDone.entrySet()) {

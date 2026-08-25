@@ -36,6 +36,7 @@ import kinoko.world.job.legend.Aran;
 import kinoko.world.skill.*;
 import kinoko.world.user.User;
 import kinoko.world.user.stat.*;
+import kinoko.weather.WeatherCombat;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -162,7 +163,10 @@ public final class HitHandler {
     }
 
     private static void handleHit(User user, HitInfo hitInfo) {
-        final int damage = hitInfo.damage;
+        // Night mobs hit harder (daytime is a no-op). Applied before every damage reduction.
+        // 移植差异：参考是"静默"（浮字不变）；kinoko 经下面的 UserRemote.hit 把缩放后的 finalDamage
+        // 广播给远程观者，本人浮字仍由本地自算（self 被 exclude）—— 属移植必然差异。
+        final int damage = WeatherCombat.scaleDamageToPlayer(hitInfo.damage);
 
         // Compute damage reductions
         final int powerGuardReduce = handleReflect(user, hitInfo);

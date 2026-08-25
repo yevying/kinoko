@@ -32,6 +32,8 @@ public final class WeatherTask {
             try {
                 WeatherService.rollIfDue();
                 broadcast(channel);
+                WeatherDebuff.refresh(channel);
+                NocturnalMobService.refresh(channel);
             } catch (Exception e) {
                 // A bad tick must not cancel the schedule; the executor wrapper also logs.
             }
