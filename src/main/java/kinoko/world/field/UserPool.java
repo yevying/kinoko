@@ -12,6 +12,8 @@ import kinoko.provider.quest.QuestInfo;
 import kinoko.server.ServerConfig;
 import kinoko.server.packet.OutPacket;
 import kinoko.world.field.drop.DropEnterType;
+import kinoko.world.field.mob.Mob;
+import kinoko.world.field.mob.MobLeaveType;
 import kinoko.world.field.summoned.Summoned;
 import kinoko.world.item.*;
 import kinoko.world.job.resistance.BattleMage;
@@ -169,9 +171,10 @@ public final class UserPool extends FieldObjectPool<User> {
             if (mob.getController() == user) {
                 assignController(mob);
                 // [MobDebug] 用户离开时怪物控制器重分配
-                log.debug("[MobDebug] removeUser field={} user={} reassignMob={} newController={}", field.getFieldId(),
+                log.debug("[MobDebug] removeUser field={} user={} reassignMob={} newController={} serverPos=({},{})", field.getFieldId(),
                         user.getCharacterName(), mob.getTemplateId(),
-                        mob.getController() != null ? mob.getController().getCharacterName() : "null");
+                        mob.getController() != null ? mob.getController().getCharacterName() : "null",
+                        mob.getX(), mob.getY());
             }
         });
         field.getNpcPool().forEach((npc) -> {
@@ -315,8 +318,35 @@ public final class UserPool extends FieldObjectPool<User> {
     }
 
     public void setController(ControlledObject controlled, User controller) {
+        final User oldController = controlled.getController();
+        final boolean handoff = oldController != null && oldController != controller;
+        final Mob mob = controlled instanceof Mob m ? m : null;
         controlled.setController(controller);
+        // [MobDebug] 控制权交接诊断：记录 P_server（将被写进 leave+enter 重建包的位置）与交接双方
+        if (mob != null) {
+            log.debug("[MobDebug] setController field={} mob={} old={} new={} handoff={} serverPos=({},{})",
+                    mob.getField() != null ? mob.getField().getFieldId() : -1,
+                    mob.getTemplateId(),
+                    oldController != null ? oldController.getCharacterName() : "null",
+                    controller.getCharacterName(),
+                    handoff,
+                    mob.getX(), mob.getY());
+        }
+        if (handoff && mob != null) {
+            // 控制权易主：原版 095 客户端 CMobPool::SetLocalMob 对池中已存在的怪物不更新坐标
+            // （只 SetTemporaryStat，位置仅在新建时经 CMob::Init 应用）。若新控制器缓存了旧的远程位置，
+            // 怪物会瞬移回旧坐标。先发 MobLeaveField(REMAINHP=0) 移除非激活的旧实例（095 OnMobLeaveField：
+            // deadType=0 时仅移除非激活怪物，本端仍在驱动的激活怪物保留），再发 MobEnterField 以服务端
+            // 权威坐标重建并恢复 m_bInViewSplit=1（否则 095 再次失去控制权时会把怪物直接从池中移除）。
+            controller.write(MobPacket.mobLeaveField(mob, MobLeaveType.REMAINHP));
+            controller.write(MobPacket.mobEnterField(mob));
+        }
         controller.write(controlled.changeControllerPacket(true));
+        if (handoff && mob != null && mob.getHp() > 0 && mob.getHp() < mob.getMaxHp()) {
+            // 重建后怪物 HP 显示恢复满值，补发百分比指示器修正
+            // （095 OnHPIndicator 需怪物已在池中，故必须在 mobChangeController(true) 之后发送）
+            controller.write(MobPacket.mobHpIndicator(mob, (int) ((double) mob.getHp() / mob.getMaxHp() * 100)));
+        }
         broadcastPacket(controlled.changeControllerPacket(false), controller);
     }
 

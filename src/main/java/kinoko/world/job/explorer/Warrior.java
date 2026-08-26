@@ -6,6 +6,7 @@ import kinoko.packet.user.UserRemote;
 import kinoko.provider.SkillProvider;
 import kinoko.provider.skill.SkillInfo;
 import kinoko.provider.skill.SkillStat;
+import kinoko.server.header.OutHeader;
 import kinoko.util.Util;
 import kinoko.world.GameConstants;
 import kinoko.world.field.Field;
@@ -15,6 +16,10 @@ import kinoko.world.field.mob.MobTemporaryStat;
 import kinoko.world.field.summoned.Summoned;
 import kinoko.world.field.summoned.SummonedAssistType;
 import kinoko.world.field.summoned.SummonedMoveAbility;
+import kinoko.world.item.BodyPart;
+import kinoko.world.item.Item;
+import kinoko.world.item.WeaponType;
+import kinoko.world.skill.ActionType;
 import kinoko.world.skill.Attack;
 import kinoko.world.skill.Skill;
 import kinoko.world.skill.SkillProcessor;
@@ -158,8 +163,13 @@ public final class Warrior extends SkillProcessor {
             // MONSTER MAGNET (1121001/1321001) — CUserLocal::TryDoingMonsterMagnet
             // 专用包 opcode 103 已由 SkillHandler 解码 targetIds/left。对非 Boss 目标：
             //   1) 施加 Stun（MobStatSet 广播 → 其他客户端怪物头顶旋转星星）
-            //   2) 服务端计算伤害并扣血 + 广播 MobDamaged（原版磁铁会造成伤害；
-            //      伤害数字由 MobDamaged 驱动 Godot/原版客户端显示，不走 UserRemote.attack）
+            //   2) 服务端计算伤害并扣血，广播 MobDamaged 时排除攻击者（攻击者本端由本地预测
+            //      显示伤害数字，与普通技能一致，避免"正常伤害 + 0/miss"双重显示；远程观察者
+            //      仍由 MobDamaged 驱动原版/Godot 客户端显示，不走 UserRemote.attack；
+            //      攻击者的 HP 更新由 mob.damage → updateHp 发 MobHPIndicator 298 权威下发）
+            //   3) 广播 UserRemote.attack 给远程观察者，播放施法者动作+磁铁施法特效
+            //      （否则远程端只看到特效、看不到施法动作；action=ActionType.NO 使包不含
+            //      攻击目标数据段，远程端不重复显示伤害数字）
             case MONSTER_MAGNET_HERO:
             case MONSTER_MAGNET_DRK:
                 final int magnetDamage = (int) Math.clamp(CalcDamage.calcDamageMax(user) * si.getValue(SkillStat.damage, slv) / 100, 1.0, GameConstants.DAMAGE_MAX);
@@ -167,9 +177,30 @@ public final class Warrior extends SkillProcessor {
                     if (!mob.isBoss()) {
                         mob.setTemporaryStat(MobTemporaryStat.Stun, MobStatOption.of(1, skill.skillId, si.getDuration(skill.slv)), 0);
                         mob.damage(user, magnetDamage, 0);
-                        field.broadcastPacket(MobPacket.mobDamaged(mob, magnetDamage));
+                        field.broadcastPacket(MobPacket.mobDamaged(mob, magnetDamage), user);
                     }
                 });
+                // 施法者动作广播（无论是否命中目标，远程观察者都应看到施法动作）。
+                // 必须使用真实武器动作码（而非 ActionType.NO=273 内部哨兵）：原版 095 客户端的
+                // action 表只识别 <0x111 的动作码，收到 273 时无法解析攻击包 → 远程玩家看不到施法
+                // 动作（Godot 客户端有 ResolveFallbackAttackAction 兜底，所以原版施法时 Godot 能看到）。
+                // 按武器类型发对应挥砍动作：1H → swingO1、2H → swingT1、枪矛 → swingP1；
+                // 攻击数据段保持空（mask=0 无目标），远程端只播动作，伤害/眩晕由 MobDamaged/MobStatSet 驱动。
+                final Item weapon = user.getInventoryManager().getEquipped().getItem(BodyPart.WEAPON.getValue());
+                final WeaponType weaponType = WeaponType.getByItemId(weapon != null ? weapon.getItemId() : 0);
+                final ActionType magnetAction = switch (weaponType) {
+                    case TH_SWORD, TH_AXE, TH_MACE -> ActionType.SWINGT1;
+                    case SPEAR, POLEARM -> ActionType.SWINGP1;
+                    default -> ActionType.SWINGO1;
+                };
+                final Attack magnetAttack = new Attack(OutHeader.UserMeleeAttack);
+                magnetAttack.skillId = skill.skillId;
+                magnetAttack.slv = skill.slv;
+                magnetAttack.mask = 0;
+                magnetAttack.flag = 0;
+                magnetAttack.attackSpeed = 6;
+                magnetAttack.actionAndDir = (short) ((skill.left ? 0x8000 : 0) | magnetAction.getValue());
+                field.broadcastPacket(UserRemote.attack(user, magnetAttack), user);
                 return;
             // COMMON
             case POWER_GUARD_HERO:

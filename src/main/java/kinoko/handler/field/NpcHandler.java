@@ -37,6 +37,12 @@ public final class NpcHandler {
         if (movePath != null) {
             movePath.applyTo(npc);
         }
-        field.broadcastPacket(NpcPacket.npcMove(npc, oneTimeAction, chatIndex, movePath));
+        // 空移动路径（count=0 或未附带 MovePath）不广播：原版 095 客户端处理空 NpcMove 会闪退
+        // （同 MobMove 空路径兜底，表现为 Error 0 | NpcMove → Connection reset）。并排除发送方——
+        // 控制器已在本地应用路径（Godot NpcNode::GenerateControllerMovePath 末尾 PlayMovePath），
+        // 无需回显（matching reference: handleMobMove 同样排除 user）。
+        if (movePath != null && !movePath.getElems().isEmpty()) {
+            field.broadcastPacket(NpcPacket.npcMove(npc, oneTimeAction, chatIndex, movePath), user);
+        }
     }
 }
