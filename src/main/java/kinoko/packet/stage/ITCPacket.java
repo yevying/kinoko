@@ -1,0 +1,265 @@
+package kinoko.packet.stage;
+
+import kinoko.server.auction.AuctionListing;
+import kinoko.server.auction.SearchResult;
+import kinoko.server.header.OutHeader;
+import kinoko.server.packet.OutPacket;
+import kinoko.util.FileTime;
+import kinoko.world.GameConstants;
+import kinoko.world.user.Account;
+import kinoko.world.user.User;
+
+import java.time.Instant;
+import java.util.List;
+
+public final class ITCPacket {
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // SetITC (142) - entering ITC
+    // ---------------------------------------------------------------------------------------------------------------
+
+    public static OutPacket setITC(User user) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.SetITC);
+        // CharacterData::Encode
+        user.getCharacterData().encode(outPacket);
+        // sNexonClubID
+        outPacket.encodeString(user.getAccount().getUsername());
+        // ITC constants
+        outPacket.encodeInt(GameConstants.ITC_REGISTER_FEE_MESO);
+        outPacket.encodeInt(GameConstants.ITC_COMMISSION_RATE);
+        outPacket.encodeInt(GameConstants.ITC_COMMISSION_BASE);
+        outPacket.encodeInt(GameConstants.ITC_AUCTION_DURATION_MIN);
+        outPacket.encodeInt(GameConstants.ITC_AUCTION_DURATION_MAX);
+        // ftServer
+        outPacket.encodeFT(Instant.now());
+        return outPacket;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // ITCQueryCashResult (411)
+    // ---------------------------------------------------------------------------------------------------------------
+
+    public static OutPacket queryCashResult(Account account) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCQueryCashResult);
+        outPacket.encodeInt(account.getNxCredit());
+        outPacket.encodeInt(account.getMaplePoint());
+        outPacket.encodeInt(account.getNxPrepaid());
+        return outPacket;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // ITCNormalItemResult (412) - sub-operation results
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * OnGetITCListDone (0x15) - browse/listing results
+     */
+    public static OutPacket listResult(SearchResult searchResult, boolean isSearch) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        if (isSearch) {
+            outPacket.encodeByte(0x17); // OnGetSearchITCListDone
+        } else {
+            outPacket.encodeByte(0x15); // OnGetITCListDone
+        }
+        // Pagination header
+        outPacket.encodeInt(searchResult.getTotalCount());
+        outPacket.encodeInt(searchResult.getPage());
+        outPacket.encodeInt(searchResult.getPageSize());
+        outPacket.encodeInt(searchResult.getTotalPages());
+        // Listings
+        outPacket.encodeInt(searchResult.getListings().size());
+        for (AuctionListing listing : searchResult.getListings()) {
+            encodeITCITEM(outPacket, listing);
+        }
+        return outPacket;
+    }
+
+    /**
+     * OnGetITCListFailed (0x16) / OnGetSearchITCListFailed (0x18)
+     */
+    public static OutPacket listFailed(boolean isSearch) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(isSearch ? 0x18 : 0x16);
+        return outPacket;
+    }
+
+    /**
+     * OnRegisterSaleEntryDone (0x1D)
+     */
+    public static OutPacket registerDone(AuctionListing listing) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x1D);
+        encodeITCITEM(outPacket, listing);
+        return outPacket;
+    }
+
+    /**
+     * OnRegisterSaleEntryFailed (0x1E)
+     */
+    public static OutPacket registerFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x1E);
+        return outPacket;
+    }
+
+    /**
+     * OnGetUserSaleItemDone (0x23)
+     */
+    public static OutPacket userSaleListResult(List<AuctionListing> listings) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x23);
+        outPacket.encodeInt(listings.size());
+        for (AuctionListing listing : listings) {
+            encodeITCITEM(outPacket, listing);
+        }
+        return outPacket;
+    }
+
+    /**
+     * OnGetUserSaleItemFailed (0x24)
+     */
+    public static OutPacket userSaleListFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x24);
+        return outPacket;
+    }
+
+    /**
+     * OnGetUserPurchaseItemDone (0x21)
+     */
+    public static OutPacket userPurchaseListResult(List<AuctionListing> listings) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x21);
+        outPacket.encodeInt(listings.size());
+        for (AuctionListing listing : listings) {
+            encodeITCITEM(outPacket, listing);
+        }
+        return outPacket;
+    }
+
+    /**
+     * OnGetUserPurchaseItemFailed (0x22)
+     */
+    public static OutPacket userPurchaseListFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x22);
+        return outPacket;
+    }
+
+    /**
+     * OnCancelSaleItemDone (0x25)
+     */
+    public static OutPacket cancelDone(int listingId) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x25);
+        outPacket.encodeInt(listingId);
+        return outPacket;
+    }
+
+    /**
+     * OnCancelSaleItemFailed (0x26)
+     */
+    public static OutPacket cancelFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x26);
+        return outPacket;
+    }
+
+    /**
+     * OnMoveITCPurchaseItemLtoSDone (0x27) - claim item/revenue success
+     */
+    public static OutPacket moveItemDone(int listingId) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x27);
+        outPacket.encodeInt(listingId);
+        return outPacket;
+    }
+
+    /**
+     * OnMoveITCPurchaseItemLtoSFailed (0x28)
+     */
+    public static OutPacket moveItemFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x28);
+        return outPacket;
+    }
+
+    /**
+     * OnBuyItemDone (0x33)
+     */
+    public static OutPacket buyDone(int listingId) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x33);
+        outPacket.encodeInt(listingId);
+        return outPacket;
+    }
+
+    /**
+     * OnBuyItemFailed (0x34)
+     */
+    public static OutPacket buyFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x34);
+        return outPacket;
+    }
+
+    /**
+     * OnSuccessBidInfoResult (0x3E) - bid result notification
+     */
+    public static OutPacket bidResult(AuctionListing listing) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x3E);
+        encodeITCITEM(outPacket, listing);
+        return outPacket;
+    }
+
+    /**
+     * OnSuccessBidInfoFailed (0x3C) - bid failure
+     */
+    public static OutPacket bidFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x3C);
+        return outPacket;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // ITCITEM encoding
+    // ---------------------------------------------------------------------------------------------------------------
+
+    private static void encodeITCITEM(OutPacket outPacket, AuctionListing listing) {
+        // GW_ItemSlotBase::Encode
+        listing.getItem().encode(outPacket);
+        // nITCSN
+        outPacket.encodeInt(listing.getListingId());
+        // price / starting price
+        outPacket.encodeInt(listing.getPrice());
+        // commission fee (contract fee)
+        outPacket.encodeInt(0);
+        // contract fee transaction ID
+        outPacket.encodeString("");
+        // rollback use ID
+        outPacket.encodeString("");
+        // ftExpire
+        outPacket.encodeFT(listing.getExpiresAt());
+        // seller ID (character name as string)
+        outPacket.encodeString(listing.getSellerName());
+        // seller game ID (same as seller name in v0.95)
+        outPacket.encodeString(listing.getSellerName());
+        // memo
+        outPacket.encodeString("");
+        // bid count (0 = no bids, 1 = has bids)
+        outPacket.encodeInt(listing.getBidCount() > 0 ? 1 : 0);
+        // bid increment
+        outPacket.encodeInt(listing.getBidRange());
+        // current highest bid
+        outPacket.encodeInt(listing.getCurrentBid());
+        // starting price
+        outPacket.encodeInt(listing.getPrice());
+        // buyout price
+        outPacket.encodeInt(listing.getBuyoutPrice());
+        // unit price
+        outPacket.encodeInt(0);
+        // process status
+        outPacket.encodeShort(listing.getProcessStatus().getValue());
+    }
+}

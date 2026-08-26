@@ -15,6 +15,8 @@ public interface DatabaseConnector {
 
     MemoAccessor getMemoAccessor();
 
+    AuctionAccessor getAuctionAccessor();
+
     void initialize();
 
     void shutdown();

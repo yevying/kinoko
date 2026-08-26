@@ -2,6 +2,10 @@ package kinoko.world;
 
 import kinoko.server.ServerConfig;
 import kinoko.util.Tuple;
+import kinoko.world.item.EquipData;
+import kinoko.world.item.Item;
+import kinoko.world.item.ItemAttribute;
+import kinoko.world.item.ItemType;
 import kinoko.world.job.Job;
 import kinoko.world.job.JobConstants;
 import kinoko.world.user.data.FuncKeyMapped;
@@ -76,6 +80,16 @@ public final class GameConstants {
     public static final String DEFAULT_PORTAL_NAME = "sp"; // spawn point
 
     public static final int DEFAULT_SPEAKER_ID = 9010000;
+
+
+    // ITC CONSTANTS -----------------------------------------------------------------------------------------------------
+
+    public static final int ITC_REGISTER_FEE_MESO = 1000;      // registration fee (mesos)
+    public static final int ITC_COMMISSION_RATE = 5;            // commission 5%
+    public static final int ITC_COMMISSION_BASE = 1000;         // commission base (mesos)
+    public static final int ITC_AUCTION_DURATION_MIN = 24;      // min auction duration (hours)
+    public static final int ITC_AUCTION_DURATION_MAX = 168;     // max auction duration (7 days)
+    public static final int ITC_MIN_PRICE = 110;                // minimum price (Maple Points)
 
 
     // PET CONSTANTS ---------------------------------------------------------------------------------------------------
@@ -261,6 +275,39 @@ public final class GameConstants {
             return Math.min(x, 10);
         }
         return Math.min(x, 50);
+    }
+
+    public static int getITCCategory(int itemId) {
+        // ITC categories: 1=equip, 2=consume, 3=install, 4=etc, 5=cash
+        int prefix = itemId / 1000000;
+        if (prefix == 1) return 1;
+        if (prefix == 2) return 2;
+        if (prefix == 3) return 3;
+        if (prefix == 4) return 4;
+        if (prefix == 5) return 5;
+        return 4; // default to etc
+    }
+
+    public static boolean isITCTradeLimitItem(Item item) {
+        if (item == null) return true;
+        // Cash items cannot be traded via ITC
+        if (item.isCash()) return true;
+        // Items with protected attribute cannot be traded
+        if (item.hasAttribute(ItemAttribute.EQUIP_PROTECTED) || item.hasAttribute(ItemAttribute.BUNDLE_PROTECTED)) return true;
+        // Items without the possible trading flag cannot be traded
+        if (!item.isPossibleTrading()) return true;
+        // Equip-specific checks
+        if (item.getItemType() == ItemType.EQUIP) {
+            EquipData ed = item.getEquipData();
+            if (ed == null) return true;
+            // Durability must be full (-1 = no durability system, 0 = zero durability remaining)
+            if (ed.getDurability() != -1 && ed.getDurability() != 0) return true;
+            // Item must not have potential
+            if (ed.getOption1() != 0 || ed.getOption2() != 0 || ed.getOption3() != 0) return true;
+            // Item must not have sockets
+            if (ed.getSocket1() != 0 || ed.getSocket2() != 0) return true;
+        }
+        return false;
     }
 
     public static int getNextLevelExp(int level) {

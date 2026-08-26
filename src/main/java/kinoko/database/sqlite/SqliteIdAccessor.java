@@ -58,6 +58,11 @@ public final class SqliteIdAccessor extends SqliteAccessor implements IdAccessor
         return getNextId(MEMO_ID);
     }
 
+    @Override
+    public synchronized Optional<Integer> nextListingId() {
+        return getNextId(LISTING_ID);
+    }
+
     public static void createTable(Connection connection) throws SQLException {
         try (Statement s = connection.createStatement()) {
             s.executeUpdate(
@@ -76,7 +81,8 @@ public final class SqliteIdAccessor extends SqliteAccessor implements IdAccessor
                     CHARACTER_ID,
                     PARTY_ID,
                     GUILD_ID,
-                    MEMO_ID
+                    MEMO_ID,
+                    LISTING_ID
             )) {
                 ps.setString(1, idType);
                 ps.setInt(2, 1);

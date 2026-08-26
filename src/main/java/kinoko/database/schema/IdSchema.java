@@ -10,4 +10,5 @@ public final class IdSchema {
     public static final String PARTY_ID = "party_id";
     public static final String GUILD_ID = "guild_id";
     public static final String MEMO_ID = "memo_id";
+    public static final String LISTING_ID = "listing_id";
 }

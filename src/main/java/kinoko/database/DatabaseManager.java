@@ -35,6 +35,10 @@ public final class DatabaseManager {
         return connector.getMemoAccessor();
     }
 
+    public static AuctionAccessor auctionAccessor() {
+        return connector.getAuctionAccessor();
+    }
+
     public static void initialize() {
         switch (ServerConstants.DATABASE_PROVIDER) {
             case "cassandra" -> {

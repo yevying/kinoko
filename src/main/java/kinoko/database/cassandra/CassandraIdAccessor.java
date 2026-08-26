@@ -71,6 +71,11 @@ public final class CassandraIdAccessor extends CassandraAccessor implements IdAc
         return getNextId(MEMO_ID);
     }
 
+    @Override
+    public synchronized Optional<Integer> nextListingId() {
+        return getNextId(LISTING_ID);
+    }
+
     public static void createTable(CqlSession session, String keyspace) {
         final ResultSet createResult = session.execute(
                 SchemaBuilder.createTable(keyspace, tableName)
@@ -86,7 +91,8 @@ public final class CassandraIdAccessor extends CassandraAccessor implements IdAc
                     CHARACTER_ID,
                     PARTY_ID,
                     GUILD_ID,
-                    MEMO_ID
+                    MEMO_ID,
+                    LISTING_ID
             )) {
                 session.execute(
                         QueryBuilder.insertInto(keyspace, tableName)

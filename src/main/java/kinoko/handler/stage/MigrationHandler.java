@@ -8,6 +8,7 @@ import kinoko.packet.field.FieldPacket;
 import kinoko.packet.field.TransferChannelType;
 import kinoko.packet.field.TransferFieldType;
 import kinoko.packet.stage.CashShopPacket;
+import kinoko.packet.stage.ITCPacket;
 import kinoko.packet.stage.StagePacket;
 import kinoko.packet.user.UserLocal;
 import kinoko.packet.world.FriendPacket;
@@ -320,7 +321,9 @@ public final class MigrationHandler {
 
     @Handler(InHeader.UserMigrateToCashShopRequest)
     public static void handleUserMigrateToCashShopRequest(User user, InPacket inPacket) {
-        inPacket.decodeInt(); // update_time
+        if (inPacket.getRemaining() >= Integer.BYTES) {
+            inPacket.decodeInt(); // update_time - server does not validate
+        }
 
         // Remove user from field
         user.getField().removeUser(user);
@@ -335,6 +338,20 @@ public final class MigrationHandler {
         user.write(CashShopPacket.loadLockerDone(account));
         user.write(CashShopPacket.loadWishDone(account.getWishlist()));
         user.write(CashShopPacket.queryCashResult(account));
+    }
+
+    @Handler(InHeader.UserMigrateToITCRequest)
+    public static void handleUserMigrateToITCRequest(User user, InPacket inPacket) {
+        if (inPacket.getRemaining() >= Integer.BYTES) {
+            inPacket.decodeInt(); // update_time - server does not validate
+        }
+
+        // Remove user from field
+        user.getField().removeUser(user);
+
+        // Send SetITC packet
+        user.write(ITCPacket.setITC(user));
+        user.write(ITCPacket.queryCashResult(user.getAccount()));
     }
 
     private static boolean isWhitelistedTransferField(int currentFieldId, int targetFieldId) {

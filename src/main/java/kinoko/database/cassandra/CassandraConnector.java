@@ -33,6 +33,7 @@ public final class CassandraConnector implements DatabaseConnector {
     private GuildAccessor guildAccessor;
     private GiftAccessor giftAccessor;
     private MemoAccessor memoAccessor;
+    private AuctionAccessor auctionAccessor;
 
     public boolean createKeyspace(CqlSession session, String keyspace) {
         try {
@@ -97,6 +98,11 @@ public final class CassandraConnector implements DatabaseConnector {
     }
 
     @Override
+    public AuctionAccessor getAuctionAccessor() {
+        return auctionAccessor;
+    }
+
+    @Override
     public void initialize() {
 // Create Config
         final DriverConfigLoader configLoader = DriverConfigLoader.programmaticBuilder()
@@ -127,6 +133,7 @@ public final class CassandraConnector implements DatabaseConnector {
             CassandraGuildAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraGiftAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraMemoAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
+            CassandraAuctionAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
         }
 
         // Create Accessors
@@ -137,6 +144,7 @@ public final class CassandraConnector implements DatabaseConnector {
         guildAccessor = new CassandraGuildAccessor(cqlSession, DATABASE_KEYSPACE);
         giftAccessor = new CassandraGiftAccessor(cqlSession, DATABASE_KEYSPACE);
         memoAccessor = new CassandraMemoAccessor(cqlSession, DATABASE_KEYSPACE);
+        auctionAccessor = new CassandraAuctionAccessor(cqlSession, DATABASE_KEYSPACE);
     }
 
     @Override

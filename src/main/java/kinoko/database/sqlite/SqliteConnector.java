@@ -19,6 +19,7 @@ public final class SqliteConnector implements DatabaseConnector {
     private GuildAccessor guildAccessor;
     private GiftAccessor giftAccessor;
     private MemoAccessor memoAccessor;
+    private AuctionAccessor auctionAccessor;
 
     @Override
     public IdAccessor getIdAccessor() {
@@ -56,6 +57,11 @@ public final class SqliteConnector implements DatabaseConnector {
     }
 
     @Override
+    public AuctionAccessor getAuctionAccessor() {
+        return auctionAccessor;
+    }
+
+    @Override
     public void initialize() {
         try {
             // Connect to SQLite database (creates file if it does not exist)
@@ -69,6 +75,7 @@ public final class SqliteConnector implements DatabaseConnector {
             SqliteGuildAccessor.createTable(connection);
             SqliteGiftAccessor.createTable(connection);
             SqliteMemoAccessor.createTable(connection);
+            SqliteAuctionAccessor.createTable(connection);
 
             // Create Accessors
             idAccessor = new SqliteIdAccessor(connection);
@@ -78,6 +85,7 @@ public final class SqliteConnector implements DatabaseConnector {
             guildAccessor = new SqliteGuildAccessor(connection);
             giftAccessor = new SqliteGiftAccessor(connection);
             memoAccessor = new SqliteMemoAccessor(connection);
+            auctionAccessor = new SqliteAuctionAccessor(connection);
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to initialize SQLite database", e);
