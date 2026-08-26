@@ -107,11 +107,6 @@ public final class UserPool extends FieldObjectPool<User> {
             } else {
                 user.write(MobPacket.mobChangeController(mob, false));
             }
-            // [MobDebug] 确认进图时每只怪物的控制器归属（排查"怪物不动"用）
-            log.debug("[MobDebug] addUser field={} user={} mob={} controller={} -> isLocal={}", field.getFieldId(),
-                    user.getCharacterName(), mob.getTemplateId(),
-                    mob.getController() != null ? mob.getController().getCharacterName() : "null",
-                    mob.getController() == user);
         });
         field.getNpcPool().forEach((npc) -> {
             user.write(NpcPacket.npcEnterField(npc));
@@ -170,11 +165,6 @@ public final class UserPool extends FieldObjectPool<User> {
         field.getMobPool().forEach((mob) -> {
             if (mob.getController() == user) {
                 assignController(mob);
-                // [MobDebug] 用户离开时怪物控制器重分配
-                log.debug("[MobDebug] removeUser field={} user={} reassignMob={} newController={} serverPos=({},{})", field.getFieldId(),
-                        user.getCharacterName(), mob.getTemplateId(),
-                        mob.getController() != null ? mob.getController().getCharacterName() : "null",
-                        mob.getX(), mob.getY());
             }
         });
         field.getNpcPool().forEach((npc) -> {
@@ -322,16 +312,6 @@ public final class UserPool extends FieldObjectPool<User> {
         final boolean handoff = oldController != null && oldController != controller;
         final Mob mob = controlled instanceof Mob m ? m : null;
         controlled.setController(controller);
-        // [MobDebug] 控制权交接诊断：记录 P_server（将被写进 leave+enter 重建包的位置）与交接双方
-        if (mob != null) {
-            log.debug("[MobDebug] setController field={} mob={} old={} new={} handoff={} serverPos=({},{})",
-                    mob.getField() != null ? mob.getField().getFieldId() : -1,
-                    mob.getTemplateId(),
-                    oldController != null ? oldController.getCharacterName() : "null",
-                    controller.getCharacterName(),
-                    handoff,
-                    mob.getX(), mob.getY());
-        }
         if (handoff && mob != null) {
             // 控制权易主：原版 095 客户端 CMobPool::SetLocalMob 对池中已存在的怪物不更新坐标
             // （只 SetTemporaryStat，位置仅在新建时经 CMob::Init 应用）。若新控制器缓存了旧的远程位置，

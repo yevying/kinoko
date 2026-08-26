@@ -119,8 +119,6 @@ public final class ShopProvider implements DataProvider {
                 throw new ProviderError("Could not resolve rechargeable item ID : %d", itemId);
             }
             final ItemInfo ii = itemInfoResult.get();
-            // [DBG] 可充值物品单价验证（验证后移除）
-            System.out.printf("[Shop][DBG] rechargeable %d unitPrice=%f slotMax=%d%n", itemId, ii.getUnitPrice(), ii.getSlotMax());
             rechargeableItems.add(ShopItem.rechargeable(itemId, ii.getSlotMax(), ii.getUnitPrice()));
         }
         return Collections.unmodifiableList(rechargeableItems);

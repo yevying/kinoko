@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("avatar_verify")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5fc1369eac4343d17243d084c59218c501b5fc23")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b5edf6b84ac334bc9231689a00fa366242d9106d")]
 [assembly: System.Reflection.AssemblyProductAttribute("avatar_verify")]
 [assembly: System.Reflection.AssemblyTitleAttribute("avatar_verify")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

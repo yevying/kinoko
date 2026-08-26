@@ -228,7 +228,10 @@ public final class ITCHandler {
         final short nPOS = inPacket.decodeShort();
         final int startPrice = inPacket.decodeInt();
         final int buyoutPrice = inPacket.decodeInt();
-        final byte duration = inPacket.decodeByte();
+        // duration 为 1 字节（095 协议 BYTE 无符号，0~255）。decodeByte() 返回带符号 byte，
+        // 128~168 小时（ITC_AUCTION_DURATION_MAX=168）会被解释为负数（168=0xA8 → -88），
+        // 导致 registerAuctionItem 时长校验失败。按无符号字节读取以支持完整 24~168 小时范围。
+        final int duration = inPacket.decodeByte() & 0xFF;
         inPacket.decodeByte(); // feeOption
         final int bidRange = inPacket.decodeInt();
 

@@ -89,22 +89,7 @@ public final class MobHandler {
         inPacket.decodeInt(); // dwHackedCodeCRC
 
         final MovePath movePath = MovePath.decode(inPacket);
-        final int beforeX = mob.getX();
-        final int beforeY = mob.getY();
         movePath.applyTo(mob);
-        // [MobDebug] P_server 更新诊断：每次控制器 flush 记录坐标，确认服务端权威位置的新鲜度
-        //（排查"控制权切换后坐标漂移/瞬移"——对比 before vs pathEnd vs after）
-        final var lastElem = movePath.getElems().isEmpty() ? null : movePath.getElems().get(movePath.getElems().size() - 1);
-        log.debug("[MobDebug] handleMobMove field={} user={} mob={} forceTransfer={} ctrl={} before=({},{}) " +
-                        "pathStart=({},{}) pathEnd=({},{}) after=({},{}) elems={}",
-                field.getFieldId(), user.getCharacterName(), mob.getTemplateId(), forceTransfer,
-                mob.getController() != null ? mob.getController().getCharacterName() : "null",
-                beforeX, beforeY,
-                movePath.getX(), movePath.getY(),
-                lastElem != null ? lastElem.getX() : -1,
-                lastElem != null ? lastElem.getY() : -1,
-                mob.getX(), mob.getY(),
-                movePath.getElems().size());
 
         inPacket.decodeByte(); // this->bChasing
         inPacket.decodeByte(); // pTarget != 0
