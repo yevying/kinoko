@@ -161,27 +161,33 @@ public final class ITCHandler {
     /**
      * 0x09 - MySaleList: list all listings where this user is the seller.
      * Packet: subOp(1)
+     * <p>空列表是合法状态（matching reference: OnGetUserSaleItemDone_576870 — count=0 时清空 m_aSaleItem 并重绘，无提示），
+     * 必须回 Done(count=0)；Failed(0x24) 仅用于真实异常。
      */
     private static void handleMySaleList(User user, AuctionManager auctionManager) {
-        final List<AuctionListing> listings = auctionManager.getUserSaleListings(user.getCharacterId());
-        if (listings.isEmpty()) {
+        try {
+            final List<AuctionListing> listings = auctionManager.getUserSaleListings(user.getCharacterId());
+            user.write(ITCPacket.userSaleListResult(listings));
+        } catch (Exception e) {
+            log.error("Failed to get user sale listings for character {}", user.getCharacterId(), e);
             user.write(ITCPacket.userSaleListFailed());
-            return;
         }
-        user.write(ITCPacket.userSaleListResult(listings));
     }
 
     /**
      * 0x0B - MyPurchaseList: list all listings where this user is the bidder.
      * Packet: subOp(1)
+     * <p>空列表是合法状态（matching reference: OnGetUserPurchaseItemDone_576CF0 — count=0 时清空并重绘，无提示），
+     * 必须回 Done(count=0)；Failed(0x22) 仅用于真实异常。
      */
     private static void handleMyPurchaseList(User user, AuctionManager auctionManager) {
-        final List<AuctionListing> listings = auctionManager.getUserPurchaseListings(user.getCharacterId());
-        if (listings.isEmpty()) {
+        try {
+            final List<AuctionListing> listings = auctionManager.getUserPurchaseListings(user.getCharacterId());
+            user.write(ITCPacket.userPurchaseListResult(listings));
+        } catch (Exception e) {
+            log.error("Failed to get user purchase listings for character {}", user.getCharacterId(), e);
             user.write(ITCPacket.userPurchaseListFailed());
-            return;
         }
-        user.write(ITCPacket.userPurchaseListResult(listings));
     }
 
     /**
