@@ -61,15 +61,21 @@ public final class ITCPacket {
         } else {
             outPacket.encodeByte(0x15); // OnGetITCListDone
         }
-        // Pagination header
+        // v0.95 list header: total count, page count, category, subcategory, page
         outPacket.encodeInt(searchResult.getTotalCount());
-        outPacket.encodeInt(searchResult.getPage());
-        outPacket.encodeInt(searchResult.getPageSize());
-        outPacket.encodeInt(searchResult.getTotalPages());
-        // Listings
         outPacket.encodeInt(searchResult.getListings().size());
+        outPacket.encodeInt(searchResult.getCategory());
+        outPacket.encodeInt(searchResult.getSubCategory());
+        outPacket.encodeInt(searchResult.getPage());
+        if (!isSearch) {
+            outPacket.encodeByte(searchResult.getSortType());
+            outPacket.encodeByte(searchResult.getSortColumn());
+        }
         for (AuctionListing listing : searchResult.getListings()) {
             encodeITCITEM(outPacket, listing);
+        }
+        if (!isSearch) {
+            outPacket.encodeByte(1);
         }
         return outPacket;
     }

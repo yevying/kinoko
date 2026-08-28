@@ -82,7 +82,34 @@ if ($busy.Count -gt 0) {
 Write-Ok "All ports free: $($PortsToCheck -join ', ')"
 
 # ===== 4. 构建或检查 jar =====
-if ($Build -or -not (Test-Path $JarPath)) {
+$RequiredJarEntries = @(
+    'kinoko/server/migration/MigrationInfo.class',
+    'kinoko/server/migration/MigrationInfo$TemporaryStatOptionType.class'
+)
+$NeedBuild = $Build -or -not (Test-Path $JarPath)
+
+if (-not $NeedBuild) {
+    $jarItem = Get-Item $JarPath
+    $sourceRoot = Join-Path $ScriptDir "src\main"
+    $newerSource = Get-ChildItem $sourceRoot -Recurse -File -Filter *.java |
+        Where-Object { $_.LastWriteTimeUtc -gt $jarItem.LastWriteTimeUtc } |
+        Select-Object -First 1
+    if ($newerSource) {
+        $NeedBuild = $true
+        Write-Warn "Source files are newer than server.jar"
+    }
+}
+
+if (-not $NeedBuild) {
+    $jarExe = Join-Path $JdkHome "bin\jar.exe"
+    $jarEntries = & $jarExe tf $JarPath
+    if ($LASTEXITCODE -ne 0 -or @($RequiredJarEntries | Where-Object { $jarEntries -notcontains $_ }).Count -gt 0) {
+        $NeedBuild = $true
+        Write-Warn "server.jar is missing required migration classes"
+    }
+}
+
+if ($NeedBuild) {
     if (-not (Test-Path $MavenHome)) {
         Write-Err "Maven not found: $MavenHome"
         exit 1
@@ -96,10 +123,16 @@ if ($Build -or -not (Test-Path $JarPath)) {
         exit 1
     }
     Write-Ok "Build success"
-} else {
-    $jarSize = [math]::Round((Get-Item $JarPath).Length / 1MB, 1)
-    Write-Ok "server.jar exists (${jarSize}MB, use -Build to rebuild)"
 }
+
+$jarExe = Join-Path $JdkHome "bin\jar.exe"
+$jarEntries = & $jarExe tf $JarPath
+if ($LASTEXITCODE -ne 0 -or @($RequiredJarEntries | Where-Object { $jarEntries -notcontains $_ }).Count -gt 0) {
+    Write-Err "server.jar is incomplete: migration classes are missing"
+    exit 1
+}
+$jarSize = [math]::Round((Get-Item $JarPath).Length / 1MB, 1)
+Write-Ok "server.jar verified (${jarSize}MB)"
 
 # ===== 5. 设置环境变量 =====
 $env:WORLD_NAME           = $WorldName

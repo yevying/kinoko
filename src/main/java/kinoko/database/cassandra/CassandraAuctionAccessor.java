@@ -172,7 +172,7 @@ public final class CassandraAuctionAccessor extends CassandraAccessor implements
         int end = Math.min(offset + pageSize, totalCount);
         List<AuctionListing> pageList = offset < totalCount ? filtered.subList(offset, end) : List.of();
 
-        return new SearchResult(pageList, totalCount, page, pageSize);
+        return new SearchResult(pageList, totalCount, page, pageSize, category, subCategory, sortType, sortColumn);
     }
 
     @Override

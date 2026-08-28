@@ -217,7 +217,7 @@ public final class SqliteAuctionAccessor extends SqliteAccessor implements Aucti
             e.printStackTrace();
         }
 
-        return new SearchResult(listings, totalCount, page, pageSize);
+        return new SearchResult(listings, totalCount, page, pageSize, category, subCategory, sortType, sortColumn);
     }
 
     @Override
