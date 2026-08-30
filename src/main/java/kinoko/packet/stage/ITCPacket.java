@@ -86,6 +86,7 @@ public final class ITCPacket {
     public static OutPacket listFailed(boolean isSearch) {
         final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
         outPacket.encodeByte(isSearch ? 0x18 : 0x16);
+        outPacket.encodeByte(0);
         return outPacket;
     }
 
@@ -105,6 +106,7 @@ public final class ITCPacket {
     public static OutPacket registerFailed() {
         final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
         outPacket.encodeByte(0x1E);
+        outPacket.encodeByte(0);
         return outPacket;
     }
 

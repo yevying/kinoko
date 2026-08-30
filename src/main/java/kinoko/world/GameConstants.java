@@ -1,5 +1,7 @@
 package kinoko.world;
 
+import kinoko.provider.ItemProvider;
+import kinoko.provider.item.ItemInfo;
 import kinoko.server.ServerConfig;
 import kinoko.util.Tuple;
 import kinoko.world.item.EquipData;
@@ -13,6 +15,7 @@ import kinoko.world.user.data.FuncKeyType;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 public final class GameConstants {
     // USER CONSTANTS --------------------------------------------------------------------------------------------------
@@ -294,8 +297,12 @@ public final class GameConstants {
         if (item.isCash()) return true;
         // Items with protected attribute cannot be traded
         if (item.hasAttribute(ItemAttribute.EQUIP_PROTECTED) || item.hasAttribute(ItemAttribute.BUNDLE_PROTECTED)) return true;
-        // Items without the possible trading flag cannot be traded
-        if (!item.isPossibleTrading()) return true;
+        // Trade-blocked items (WZ tradeBlock / binded / cash / quest) cannot be traded via ITC.
+        // ItemInfo.isTradeBlock 与 UserHandler 的丢弃/交易判断同源；
+        // 注意 POSSIBLE_TRADING 是剪刀/鉴定覆盖标记，普通物品 attribute=0 即为可交易，
+        // 不能用 !item.isPossibleTrading() 作为拦截条件（会把所有普通物品全部拦下）。
+        final Optional<ItemInfo> itemInfoResult = ItemProvider.getItemInfo(item.getItemId());
+        if (itemInfoResult.isEmpty() || itemInfoResult.get().isTradeBlock(item)) return true;
         // Equip-specific checks
         if (item.getItemType() == ItemType.EQUIP) {
             EquipData ed = item.getEquipData();

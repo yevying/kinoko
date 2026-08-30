@@ -65,6 +65,7 @@ public final class ITCHandler {
 
         final InventoryType inventoryType = InventoryType.getByValue(nTI);
         if (inventoryType == null || inventoryType == InventoryType.EQUIPPED) {
+            log.error("[ITC] RegisterSale rejected: invalid inventory type {} for {}", nTI, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -74,6 +75,9 @@ public final class ITCHandler {
         final Inventory inventory = im.getInventoryByType(inventoryType);
         final Item item = inventory.getItem(nPOS);
         if (item == null || GameConstants.isITCTradeLimitItem(item)) {
+            log.error("[ITC] RegisterSale rejected: item null={} tradeLimit={} itemId={} pos={} for {}",
+                    item == null, item != null && GameConstants.isITCTradeLimitItem(item),
+                    item != null ? item.getItemId() : 0, nPOS, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -81,6 +85,8 @@ public final class ITCHandler {
         // Remove item from inventory first
         final Optional<InventoryOperation> removeResult = im.removeItem(nPOS, item, item.getQuantity());
         if (removeResult.isEmpty()) {
+            log.error("[ITC] RegisterSale rejected: failed to remove item {} pos {} for {}",
+                    item.getItemId(), nPOS, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -90,6 +96,8 @@ public final class ITCHandler {
         if (listingResult.isEmpty()) {
             // Rollback: restore item to inventory
             inventory.putItem(nPOS, item);
+            log.error("[ITC] RegisterSale rejected: auctionManager.registerSaleItem failed (price={}, meso={}) for {}",
+                    price, im.getMoney(), user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -243,6 +251,7 @@ public final class ITCHandler {
 
         final InventoryType inventoryType = InventoryType.getByValue(nTI);
         if (inventoryType == null || inventoryType == InventoryType.EQUIPPED) {
+            log.error("[ITC] RegisterAuction rejected: invalid inventory type {} for {}", nTI, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -252,6 +261,9 @@ public final class ITCHandler {
         final Inventory inventory = im.getInventoryByType(inventoryType);
         final Item item = inventory.getItem(nPOS);
         if (item == null || GameConstants.isITCTradeLimitItem(item)) {
+            log.error("[ITC] RegisterAuction rejected: item null={} tradeLimit={} itemId={} pos={} for {}",
+                    item == null, item != null && GameConstants.isITCTradeLimitItem(item),
+                    item != null ? item.getItemId() : 0, nPOS, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -259,6 +271,8 @@ public final class ITCHandler {
         // Remove item from inventory first
         final Optional<InventoryOperation> removeResult = im.removeItem(nPOS, item, item.getQuantity());
         if (removeResult.isEmpty()) {
+            log.error("[ITC] RegisterAuction rejected: failed to remove item {} pos {} for {}",
+                    item.getItemId(), nPOS, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
@@ -269,6 +283,8 @@ public final class ITCHandler {
         if (listingResult.isEmpty()) {
             // Rollback: restore item to inventory
             inventory.putItem(nPOS, item);
+            log.error("[ITC] RegisterAuction rejected: registerAuctionItem failed (start={}, buyout={}, duration={}, bidRange={}) for {}",
+                    startPrice, buyoutPrice, duration, bidRange, user.getCharacterName());
             user.write(ITCPacket.registerFailed());
             return;
         }
