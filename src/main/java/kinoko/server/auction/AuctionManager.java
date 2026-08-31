@@ -12,8 +12,11 @@ import org.apache.logging.log4j.Logger;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -189,6 +192,40 @@ public final class AuctionManager {
     }
 
     /**
+     * 购物车结算：逐条购买（直售用 buyItem，拍卖用 buyAuctionImm），汇总成功条目与背包操作。
+     * <p>复用现有单条购买逻辑以复用其校验/扣 MaplePoint/发物品，逐条独立成功与否；
+     * 失败条目保留在 {@link CheckoutResult#failed()} 中由客户端提示并留在购物车。
+     *
+     * @return 结算结果（成功条目 + 失败条目 + 背包操作）。
+     */
+    public CheckoutResult checkoutCart(User buyer, List<Integer> listingIds) {
+        final List<Integer> bought = new ArrayList<>();
+        final List<Integer> failed = new ArrayList<>();
+        final List<InventoryOperation> operations = new ArrayList<>();
+        final Set<Integer> seen = new HashSet<>();
+        for (int listingId : listingIds) {
+            if (listingId <= 0 || !seen.add(listingId)) {
+                failed.add(listingId);
+                continue;
+            }
+            final AuctionListing listing = activeListings.get(listingId);
+            final Optional<List<InventoryOperation>> result;
+            if (listing != null && listing.isAuction()) {
+                result = buyAuctionImm(buyer, listingId);
+            } else {
+                result = buyItem(buyer, listingId);
+            }
+            if (result.isPresent()) {
+                bought.add(listingId);
+                operations.addAll(result.get());
+            } else {
+                failed.add(listingId);
+            }
+        }
+        return new CheckoutResult(bought, failed, operations);
+    }
+
+    /**
      * Place a bid on an auction item.
      */
     public boolean bidAuction(User bidder, int listingId, int bidAmount) {
@@ -314,6 +351,12 @@ public final class AuctionManager {
 
         log.info("ITC cancel: {} cancelled listing {}", user.getCharacterName(), listingId);
         return true;
+    }
+
+    /**
+     * 购物车结算结果：成功购买的 listingId 及合并后的背包操作。
+     */
+    public record CheckoutResult(List<Integer> bought, List<Integer> failed, List<InventoryOperation> itemOps) {
     }
 
     /**

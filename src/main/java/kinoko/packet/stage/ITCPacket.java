@@ -1,6 +1,7 @@
 package kinoko.packet.stage;
 
 import kinoko.server.auction.AuctionListing;
+import kinoko.server.auction.AuctionManager;
 import kinoko.server.auction.SearchResult;
 import kinoko.server.header.OutHeader;
 import kinoko.server.packet.OutPacket;
@@ -137,6 +138,9 @@ public final class ITCPacket {
 
     /**
      * OnGetUserPurchaseItemDone (0x21)
+     * <p>原版客户端尾部必读两项（matching reference: OnGetUserPurchaseItemDone_576CF0）：
+     * Decode4 nLimitedCount（受限/交易结束待结算道具数）+ Decode1 复位 m_bITCRequestSent。
+     * 缺任一项都会让 CInPacket 越界读取，触发客户端闪退（dump error 0x26）。
      */
     public static OutPacket userPurchaseListResult(List<AuctionListing> listings) {
         final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
@@ -145,6 +149,8 @@ public final class ITCPacket {
         for (AuctionListing listing : listings) {
             encodeITCITEM(outPacket, listing);
         }
+        outPacket.encodeInt(0);   // nLimitedCount：进入 ITC 时无受限道具，填 0
+        outPacket.encodeByte(1);  // 复位 m_bITCRequestSent，允许后续继续发起请求
         return outPacket;
     }
 
@@ -224,6 +230,25 @@ public final class ITCPacket {
     public static OutPacket buyFailed() {
         final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
         outPacket.encodeByte(0x34);
+        return outPacket;
+    }
+
+    /**
+     * CartCheckoutResult (0x35) - batch cart checkout result.
+     * <p>逐条上报成功情况：count + (listingId + success(1))×count，客户端据此结算购物车。
+     */
+    public static OutPacket cartCheckoutResult(AuctionManager.CheckoutResult result) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x35);
+        outPacket.encodeInt(result.bought().size() + result.failed().size());
+        for (int listingId : result.bought()) {
+            outPacket.encodeInt(listingId);
+            outPacket.encodeByte(1);
+        }
+        for (int listingId : result.failed()) {
+            outPacket.encodeInt(listingId);
+            outPacket.encodeByte(0);
+        }
         return outPacket;
     }
 

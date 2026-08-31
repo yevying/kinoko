@@ -16,6 +16,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,6 +48,7 @@ public final class ITCHandler {
             case 0x12 -> handleRegisterAuctionItem(user, inPacket, auctionManager);
             case 0x13 -> handleBid(user, inPacket, auctionManager);
             case 0x14 -> handleBuyAuctionImm(user, inPacket, auctionManager);
+            case 0x15 -> handleCartCheckout(user, inPacket, auctionManager);
             default -> log.error("Unhandled ITCItemRequest sub-opcode : {}", subOp);
         }
     }
@@ -441,6 +443,28 @@ public final class ITCHandler {
         } else {
             user.write(ITCPacket.buyFailed());
         }
+    }
+
+    /**
+     * 0x15 - CartCheckout: batch purchase of cart listings.
+     * Packet: subOp(1), count(4), listingId(4)×count
+     */
+    private static void handleCartCheckout(User user, InPacket inPacket, AuctionManager auctionManager) {
+        final int count = Math.max(0, Math.min(inPacket.decodeInt(), 50));
+        final List<Integer> listingIds = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            listingIds.add(inPacket.decodeInt());
+        }
+        if (listingIds.isEmpty()) {
+            return;
+        }
+
+        final AuctionManager.CheckoutResult result = auctionManager.checkoutCart(user, listingIds);
+        if (!result.itemOps().isEmpty()) {
+            user.write(WvsContext.inventoryOperation(result.itemOps(), false));
+        }
+        user.write(ITCPacket.cartCheckoutResult(result));
+        user.write(ITCPacket.queryCashResult(user.getAccount()));
     }
 
     // ---------------------------------------------------------------------------------------------------------------
