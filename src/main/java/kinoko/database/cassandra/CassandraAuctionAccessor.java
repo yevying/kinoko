@@ -7,6 +7,7 @@ import com.datastax.oss.driver.api.core.type.DataTypes;
 import com.datastax.oss.driver.api.querybuilder.SchemaBuilder;
 import kinoko.database.AuctionAccessor;
 import kinoko.database.json.ItemSerializer;
+import kinoko.provider.StringProvider;
 import kinoko.server.auction.AuctionListing;
 import kinoko.server.auction.AuctionState;
 import kinoko.server.auction.SearchResult;
@@ -15,6 +16,7 @@ import kinoko.world.item.Item;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static com.datastax.oss.driver.api.querybuilder.QueryBuilder.*;
@@ -135,22 +137,31 @@ public final class CassandraAuctionAccessor extends CassandraAccessor implements
     }
 
     @Override
-    public SearchResult searchListings(int category, int subCategory, int page, int pageSize,
+    public SearchResult searchListings(int itemType, int board, int page, int pageSize,
                                        byte sortType, byte sortColumn, int searchOption, String searchText) {
         // For Cassandra, we fetch all active listings and filter in-memory.
         // This is acceptable for typical ITC dataset sizes.
         List<AuctionListing> allActive = getActiveListings();
+        final boolean searchItem = searchText != null && !searchText.isEmpty() && searchOption == 1;
+        final List<Integer> searchedIds = searchItem ? resolveItemIds(searchText) : List.of();
+        final String sellerFilter = (searchText != null && !searchText.isEmpty() && searchOption != 1)
+                ? searchText.toLowerCase() : null;
         List<AuctionListing> filtered = new ArrayList<>();
 
         for (AuctionListing listing : allActive) {
-            if (category > 0 && listing.getItemType() != category) continue;
-            if (subCategory > 0) {
-                int subPrefix = subCategory * 10000;
-                int itemId = listing.getItemId();
-                if (itemId < subPrefix || itemId >= subPrefix + 10000) continue;
+            if (itemType > 0 && listing.getItemType() != itemType) continue;
+            // board: 1=贩卖(bidRange=0), 3=竞标(bidRange>0), 2=购买/wish(kinoko 未实现，恒空)
+            if (board == 1) {
+                if (listing.getBidRange() != 0) continue;
+            } else if (board == 3) {
+                if (listing.getBidRange() <= 0) continue;
+            } else if (board == 2) {
+                continue;
             }
-            if (searchText != null && !searchText.isEmpty()) {
-                if (!listing.getSellerName().toLowerCase().contains(searchText.toLowerCase())) continue;
+            if (searchItem) {
+                if (!searchedIds.contains(listing.getItemId())) continue;
+            } else if (sellerFilter != null) {
+                if (!listing.getSellerName().toLowerCase().contains(sellerFilter)) continue;
             }
             filtered.add(listing);
         }
@@ -172,7 +183,26 @@ public final class CassandraAuctionAccessor extends CassandraAccessor implements
         int end = Math.min(offset + pageSize, totalCount);
         List<AuctionListing> pageList = offset < totalCount ? filtered.subList(offset, end) : List.of();
 
-        return new SearchResult(pageList, totalCount, page, pageSize, category, subCategory, sortType, sortColumn);
+        return new SearchResult(pageList, totalCount, page, pageSize, board, itemType, sortType, sortColumn);
+    }
+
+    /** 搜索文本 → 物品 ID 集合：纯数字按 ID 精确匹配，否则按名称包含匹配（大小写不敏感）。 */
+    private static List<Integer> resolveItemIds(String text) {
+        if (text.chars().allMatch(Character::isDigit)) {
+            try {
+                return List.of(Integer.parseInt(text));
+            } catch (NumberFormatException e) {
+                return List.of();
+            }
+        }
+        final String lower = text.toLowerCase();
+        List<Integer> ids = new ArrayList<>();
+        for (Map.Entry<Integer, String> entry : StringProvider.getItemNames().entrySet()) {
+            if (entry.getValue() != null && entry.getValue().toLowerCase().contains(lower)) {
+                ids.add(entry.getKey());
+            }
+        }
+        return ids;
     }
 
     @Override

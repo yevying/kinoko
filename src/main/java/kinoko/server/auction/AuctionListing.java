@@ -173,8 +173,12 @@ public final class AuctionListing {
         return Instant.now().isAfter(expiresAt);
     }
 
+    /**
+     * 判别依据是 bidRange：registerSaleItem 固定写 bidRange=0，registerAuctionItem 要求 bidRange>0。
+     * （旧实现 buyoutPrice>0||currentBid>0 会把未出价且无一口价的新拍卖误判为直接出售。）
+     */
     public boolean isAuction() {
-        return buyoutPrice > 0 || currentBid > 0;
+        return bidRange > 0;
     }
 
     public boolean isDirectSale() {

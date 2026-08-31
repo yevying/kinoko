@@ -83,6 +83,9 @@ public final class User extends Life {
     private int portableChairId;
     private String adBoard;
     private boolean inTransfer;
+    // 原版 095 客户端使用完整物品序列化登记 ITC（Godot 客户端用槽位协议），
+    // 由 ITCHandler 在解析到原版格式请求时置位，用于按客户端选择响应布局。
+    private boolean originalITCClient;
     private Instant nextCheckItemExpire;
     private Instant nextIdleRecovery;
 
@@ -351,6 +354,14 @@ public final class User extends Life {
 
     public void setInTransfer(boolean inTransfer) {
         this.inTransfer = inTransfer;
+    }
+
+    public boolean isOriginalITCClient() {
+        return originalITCClient;
+    }
+
+    public void setOriginalITCClient(boolean originalITCClient) {
+        this.originalITCClient = originalITCClient;
     }
 
     public Instant getNextCheckItemExpire() {

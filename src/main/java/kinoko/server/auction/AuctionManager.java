@@ -317,22 +317,32 @@ public final class AuctionManager {
     }
 
     /**
+     * ITC 领取结果。{@code itemOps} 非 null 表示有物品已放回背包（用于发送 InventoryOperation，
+     * 以及原版客户端 0x27 响应的 tab/slotNo）。
+     */
+    public record ClaimResult(boolean success, List<InventoryOperation> itemOps) {
+        public static final ClaimResult FAILURE = new ClaimResult(false, null);
+        /** 领取成功但无物品入包（金币收入）。 */
+        public static final ClaimResult REVENUE_CLAIMED = new ClaimResult(true, null);
+    }
+
+    /**
      * Claim an item or revenue from a listing back to inventory.
      */
-    public boolean moveItemToInventory(User user, int listingId) {
+    public ClaimResult moveItemToInventory(User user, int listingId) {
         AuctionListing listing = DatabaseManager.auctionAccessor().getListingById(listingId).orElse(null);
         if (listing == null) {
-            return false;
+            return ClaimResult.FAILURE;
         }
         boolean isSeller = listing.getSellerId() == user.getCharacterId();
         if (!isSeller) {
-            return false;
+            return ClaimResult.FAILURE;
         }
         if (listing.isClaimed()) {
-            return false;
+            return ClaimResult.FAILURE;
         }
         if (listing.getProcessStatus() == AuctionState.ACTIVE) {
-            return false;
+            return ClaimResult.FAILURE;
         }
         InventoryManager im = user.getInventoryManager();
         if (listing.getProcessStatus() == AuctionState.SOLD) {
@@ -340,39 +350,42 @@ public final class AuctionManager {
             int revenue = listing.getRevenueAfterCommission(
                     GameConstants.ITC_COMMISSION_RATE, GameConstants.ITC_COMMISSION_BASE);
             if (!im.canAddMoney(revenue)) {
-                return false;
+                return ClaimResult.FAILURE;
             }
             im.addMoney(revenue);
             listing.setClaimed(true);
             DatabaseManager.auctionAccessor().updateListing(listing);
             log.info("ITC claim revenue: {} claimed {} mesos from listing {}",
                     user.getCharacterName(), revenue, listingId);
-            return true;
+            return ClaimResult.REVENUE_CLAIMED;
         } else if (listing.getProcessStatus() == AuctionState.CANCELLED ||
                 listing.getProcessStatus() == AuctionState.EXPIRED) {
             // Seller claims item back
             if (!im.canAddItem(listing.getItem())) {
-                return false;
+                return ClaimResult.FAILURE;
             }
             Item returnItem = new Item(listing.getItem());
             returnItem.setItemSn(user.getNextItemSn());
-            im.addItem(returnItem);
+            Optional<List<InventoryOperation>> addResult = im.addItem(returnItem);
+            if (addResult.isEmpty()) {
+                return ClaimResult.FAILURE;
+            }
             listing.setClaimed(true);
             DatabaseManager.auctionAccessor().updateListing(listing);
             log.info("ITC claim item: {} claimed item back from listing {}",
                     user.getCharacterName(), listingId);
-            return true;
+            return new ClaimResult(true, addResult.get());
         }
-        return false;
+        return ClaimResult.FAILURE;
     }
 
     /**
      * Search/browse listings with filtering and pagination.
      */
-    public SearchResult searchListings(int category, int subCategory, int page, int pageSize,
+    public SearchResult searchListings(int itemType, int board, int page, int pageSize,
                                        byte sortType, byte sortColumn, int searchOption, String searchText) {
         return DatabaseManager.auctionAccessor().searchListings(
-                category, subCategory, page, pageSize, sortType, sortColumn, searchOption, searchText);
+                itemType, board, page, pageSize, sortType, sortColumn, searchOption, searchText);
     }
 
     /**

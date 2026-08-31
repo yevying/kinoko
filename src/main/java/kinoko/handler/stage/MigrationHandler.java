@@ -16,6 +16,7 @@ import kinoko.packet.world.MemoPacket;
 import kinoko.packet.world.WvsContext;
 import kinoko.provider.MapProvider;
 import kinoko.provider.map.PortalInfo;
+import kinoko.server.auction.AuctionManager;
 import kinoko.server.cashshop.Gift;
 import kinoko.server.field.InstanceFieldStorage;
 import kinoko.server.guild.GuildRequest;
@@ -352,6 +353,12 @@ public final class MigrationHandler {
         // Send SetITC packet
         user.write(ITCPacket.setITC(user));
         user.write(ITCPacket.queryCashResult(user.getAccount()));
+
+        // 原版客户端不会主动请求"我的出售/购买"列表（客户端无对应 308 sender），
+        // 进入 ITC 时必须主动推送，否则 m_aSaleItem/m_aPurchaseItem 永远为空；Godot 端重复推送无害。
+        final AuctionManager auctionManager = AuctionManager.getInstance();
+        user.write(ITCPacket.userSaleListResult(auctionManager.getUserSaleListings(user.getCharacterId())));
+        user.write(ITCPacket.userPurchaseListResult(auctionManager.getUserPurchaseListings(user.getCharacterId())));
     }
 
     private static boolean isWhitelistedTransferField(int currentFieldId, int targetFieldId) {

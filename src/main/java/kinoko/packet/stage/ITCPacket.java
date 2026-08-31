@@ -102,11 +102,14 @@ public final class ITCPacket {
 
     /**
      * OnRegisterSaleEntryFailed (0x1E)
+     * <p>reason 为原版客户端 NoticeFailReason 的失败原因字符（matching reference:
+     * OnNormalItemResRegisterSaleEnt_576B80）：'O'=该道具无法登记、'C'=金币不足、'R'=耐用度未修复等；
+     * 0 = 无提示（Godot 客户端不读取该字节，保持 0）。
      */
-    public static OutPacket registerFailed() {
+    public static OutPacket registerFailed(int reason) {
         final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
         outPacket.encodeByte(0x1E);
-        outPacket.encodeByte(0);
+        outPacket.encodeByte(reason);
         return outPacket;
     }
 
@@ -184,6 +187,19 @@ public final class ITCPacket {
     }
 
     /**
+     * OnMoveITCPurchaseItemLtoSDone (0x27) - 原版客户端布局（matching reference:
+     * OnMoveITCPurchaseItemLtoSDone_5760A0：Decode4 tab(1-based 背包页) + Decode4 slotNo，
+     * 用于切换背包页并高亮槽位；不读 listingId）。
+     */
+    public static OutPacket moveItemDoneOriginal(int tab, int slotNo) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x27);
+        outPacket.encodeInt(tab);
+        outPacket.encodeInt(slotNo);
+        return outPacket;
+    }
+
+    /**
      * OnMoveITCPurchaseItemLtoSFailed (0x28)
      */
     public static OutPacket moveItemFailed() {
@@ -218,6 +234,21 @@ public final class ITCPacket {
         final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
         outPacket.encodeByte(0x3E);
         encodeITCITEM(outPacket, listing);
+        return outPacket;
+    }
+
+    /**
+     * OnSuccessBidInfoResult (0x3E) - 原版客户端布局（matching reference:
+     * OnSuccessBidInfoResult_577000：只读 byte(1=售出/其他=拍得) + itemId(4) + price(4) + ftTime(8)，
+     * 不读完整 ITCITEM）。
+     */
+    public static OutPacket bidResultCompact(int soldFlag, int itemId, int price, Instant time) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x3E);
+        outPacket.encodeByte(soldFlag);
+        outPacket.encodeInt(itemId);
+        outPacket.encodeInt(price);
+        outPacket.encodeFT(time);
         return outPacket;
     }
 

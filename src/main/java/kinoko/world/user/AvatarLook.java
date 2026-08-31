@@ -153,17 +153,22 @@ public final class AvatarLook implements Encodable {
      * Whether the body part is a character equip slot that belongs in the avatar look.
      * (matching reference: 095 is_correct_bodypart — anHairEquip 仅包含角色穿戴槽位)
      * <p>
-     * Pet equipment (PETWEAR, PETRING, PETABIL_*) and mount equipment (TAMINGMOB, SADDLE,
-     * MOBEQUIP) are stored in the equipped inventory at cash body parts but must NOT be
-     * encoded into the avatar look — the v95 client only supports character equip body
-     * parts in anHairEquip and will throw while processing unknown body parts (e.g. 46,
+     * Pet equipment (PETWEAR, PETRING, PETABIL_*) and pet skill body parts are stored
+     * in the equipped inventory at cash body parts but must NOT be encoded into the
+     * avatar look — the v95 client only supports character equip body parts in
+     * anHairEquip and will throw while processing unknown body parts (e.g. 46,
      * PETABIL_IGNOREITEMS1), which surfaces as a ClientDumpLog error on SelectWorldResult.
+     * <p>
+     * Mount equipment (TAMINGMOB, SADDLE, MOBEQUIP) IS a legitimate avatar look body
+     * part in v95 — remote players need it to render the saddle/mount equip over their
+     * ridden mount (literal saddle equipment on other players' mounts).
      */
     private static boolean isCharacterEquipBodyPart(int bodyPart) {
         return (bodyPart >= BodyPart.CAP.getValue() && bodyPart <= BodyPart.WEAPON.getValue())
                 || (bodyPart >= BodyPart.RING1.getValue() && bodyPart <= BodyPart.PENDANT.getValue() && bodyPart != BodyPart.PETWEAR.getValue())
                 || (bodyPart >= BodyPart.MEDAL.getValue() && bodyPart <= BodyPart.SHOULDER.getValue())
-                || bodyPart == BodyPart.EXT_PENDANT1.getValue();
+                || bodyPart == BodyPart.EXT_PENDANT1.getValue()
+                || bodyPart >= BodyPart.TAMINGMOB.getValue() && bodyPart <= BodyPart.MOBEQUIP.getValue();
     }
 
     private static int getPetId(Inventory cashInventory, long petSn) {

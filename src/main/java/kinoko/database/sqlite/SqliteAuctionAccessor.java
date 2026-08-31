@@ -3,6 +3,7 @@ package kinoko.database.sqlite;
 import com.alibaba.fastjson2.JSON;
 import kinoko.database.AuctionAccessor;
 import kinoko.database.json.ItemSerializer;
+import kinoko.provider.StringProvider;
 import kinoko.server.auction.AuctionListing;
 import kinoko.server.auction.AuctionState;
 import kinoko.server.auction.SearchResult;
@@ -12,6 +13,7 @@ import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static kinoko.database.schema.AuctionSchema.*;
@@ -141,7 +143,7 @@ public final class SqliteAuctionAccessor extends SqliteAccessor implements Aucti
     }
 
     @Override
-    public SearchResult searchListings(int category, int subCategory, int page, int pageSize,
+    public SearchResult searchListings(int itemType, int board, int page, int pageSize,
                                        byte sortType, byte sortColumn, int searchOption, String searchText) {
         List<AuctionListing> listings = new ArrayList<>();
         int totalCount = 0;
@@ -155,21 +157,34 @@ public final class SqliteAuctionAccessor extends SqliteAccessor implements Aucti
         List<Object> params = new ArrayList<>();
         params.add(AuctionState.ACTIVE.getValue());
 
-        if (category > 0) {
+        if (itemType > 0) {
             whereClause.append(" AND ").append(ITEM_TYPE).append(" = ?");
-            params.add(category);
+            params.add(itemType);
         }
-        // subCategory for itemId prefix filtering (e.g. weapon type)
-        if (subCategory > 0) {
-            int subPrefix = subCategory * 10000;
-            whereClause.append(" AND ").append(ITEM_ID).append(" >= ? AND ").append(ITEM_ID).append(" < ?");
-            params.add(subPrefix);
-            params.add(subPrefix + 10000);
+        // board: 1=贩卖(bidRange=0), 3=竞标(bidRange>0), 2=购买/wish(kinoko 未实现，恒空)
+        if (board == 1) {
+            whereClause.append(" AND ").append(BID_RANGE).append(" = 0");
+        } else if (board == 3) {
+            whereClause.append(" AND ").append(BID_RANGE).append(" > 0");
+        } else if (board == 2) {
+            whereClause.append(" AND 1 = 0");
         }
-        // Text search on seller name
+        // Text search: 0=卖家名, 1=物品（纯数字按物品 ID，否则按名称解析为 ID 集合）
         if (searchText != null && !searchText.isEmpty()) {
-            whereClause.append(" AND ").append(SELLER_NAME).append(" LIKE ?");
-            params.add("%" + searchText + "%");
+            if (searchOption == 1) {
+                final List<Integer> itemIds = resolveItemIds(searchText);
+                if (itemIds.isEmpty()) {
+                    whereClause.append(" AND 1 = 0");
+                } else {
+                    whereClause.append(" AND ").append(ITEM_ID).append(" IN (")
+                            .append(String.join(",", java.util.Collections.nCopies(itemIds.size(), "?")))
+                            .append(')');
+                    params.addAll(itemIds);
+                }
+            } else {
+                whereClause.append(" AND ").append(SELLER_NAME).append(" LIKE ?");
+                params.add("%" + searchText + "%");
+            }
         }
 
         // Count query
@@ -217,7 +232,26 @@ public final class SqliteAuctionAccessor extends SqliteAccessor implements Aucti
             e.printStackTrace();
         }
 
-        return new SearchResult(listings, totalCount, page, pageSize, category, subCategory, sortType, sortColumn);
+        return new SearchResult(listings, totalCount, page, pageSize, board, itemType, sortType, sortColumn);
+    }
+
+    /** 搜索文本 → 物品 ID 集合：纯数字按 ID 精确匹配，否则按名称包含匹配（大小写不敏感）。 */
+    private static List<Integer> resolveItemIds(String text) {
+        if (text.chars().allMatch(Character::isDigit)) {
+            try {
+                return List.of(Integer.parseInt(text));
+            } catch (NumberFormatException e) {
+                return List.of();
+            }
+        }
+        final String lower = text.toLowerCase();
+        List<Integer> ids = new ArrayList<>();
+        for (Map.Entry<Integer, String> entry : StringProvider.getItemNames().entrySet()) {
+            if (entry.getValue() != null && entry.getValue().toLowerCase().contains(lower)) {
+                ids.add(entry.getKey());
+            }
+        }
+        return ids;
     }
 
     @Override
