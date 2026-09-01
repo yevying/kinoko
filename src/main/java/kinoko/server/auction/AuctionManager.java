@@ -24,9 +24,13 @@ import java.util.concurrent.TimeUnit;
 
 public final class AuctionManager {
     private static final Logger log = LogManager.getLogger(AuctionManager.class);
+    /** 购物车上限（matching reference: Godot ITCScene.MaxCartItems = 50）。 */
+    private static final int MAX_CART_ITEMS = 50;
 
     private static AuctionManager instance;
     private final ConcurrentHashMap<Integer, AuctionListing> activeListings = new ConcurrentHashMap<>();
+    /** 原版 v95 客户端购物车（愿望清单）：accountId -> (listingId -> listing)。Godot 客户端购物车为本地维护，不走此处。 */
+    private final ConcurrentHashMap<Integer, ConcurrentHashMap<Integer, AuctionListing>> wishLists = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private AuctionManager() {
@@ -454,6 +458,76 @@ public final class AuctionManager {
             return Optional.of(cached);
         }
         return DatabaseManager.auctionAccessor().getListingById(listingId);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // 原版 v95 客户端购物车（愿望清单）操作
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * 加入购物车（matching reference: CITC::OnSetZzim_5733B0 — 请求 0x09）。
+     * 仅收录可直接购买的直售条目（isDirectSale），且条目须处于 ACTIVE 未过期；
+     * 已在购物车或上限已满则返回 false（客户端显示"无法重复放入购物车！"）。
+     */
+    public boolean setZzim(User user, int listingId) {
+        if (listingId <= 0) {
+            return false;
+        }
+        final AuctionListing listing = activeListings.get(listingId);
+        if (listing == null || !listing.isDirectSale() ||
+                listing.getProcessStatus() != AuctionState.ACTIVE || listing.isExpired()) {
+            return false;
+        }
+        final ConcurrentHashMap<Integer, AuctionListing> wish = wishLists.computeIfAbsent(
+                user.getAccount().getId(), id -> new ConcurrentHashMap<>());
+        if (wish.size() >= MAX_CART_ITEMS) {
+            return false;
+        }
+        if (wish.putIfAbsent(listingId, listing) != null) {
+            return false; // 已存在
+        }
+        log.info("ITC zzim: {} added listing {} to wishlist", user.getCharacterName(), listingId);
+        return true;
+    }
+
+    /**
+     * 从购物车移除（matching reference: CITC::OnDeleteZzim_573520 — 请求 0x0A）。
+     */
+    public boolean deleteZzim(User user, int listingId) {
+        final ConcurrentHashMap<Integer, AuctionListing> wish = wishLists.get(user.getAccount().getId());
+        if (wish == null) {
+            return false;
+        }
+        if (wish.remove(listingId) == null) {
+            return false;
+        }
+        log.info("ITC zzim: {} removed listing {} from wishlist", user.getCharacterName(), listingId);
+        return true;
+    }
+
+    /**
+     * 获取购物车条目列表（matching reference: CITC::OnLoadWishSaleListDone_5769A0 — 响应 0x2D）。
+     * 返回活跃且未过期的条目（已售出/过期/取消的条目过滤掉并清理）。
+     */
+    public List<AuctionListing> getWishListings(User user) {
+        final ConcurrentHashMap<Integer, AuctionListing> wish = wishLists.get(user.getAccount().getId());
+        if (wish == null || wish.isEmpty()) {
+            return new ArrayList<>();
+        }
+        final List<AuctionListing> result = new ArrayList<>();
+        final List<Integer> stale = new ArrayList<>();
+        for (var entry : wish.entrySet()) {
+            final AuctionListing listing = entry.getValue();
+            if (listing.getProcessStatus() == AuctionState.ACTIVE && !listing.isExpired()) {
+                result.add(listing);
+            } else {
+                stale.add(entry.getKey());
+            }
+        }
+        if (!stale.isEmpty()) {
+            stale.forEach(wish::remove);
+        }
+        return result;
     }
 
     // ---------------------------------------------------------------------------------------------------------------

@@ -42,8 +42,30 @@ public final class ITCHandler {
             case 0x06 -> handleSearchList(user, inPacket, auctionManager);
             case 0x07 -> handleCancelSaleItem(user, inPacket, auctionManager);
             case 0x08 -> handleMoveItemToInventory(user, inPacket, auctionManager);
-            case 0x09 -> handleMySaleList(user, auctionManager);
-            case 0x0B -> handleMyPurchaseList(user, auctionManager);
+            // 0x09/0x0A/0x0B 在两种客户端语义不同：
+            //   原版 v95：0x09=SetZzim(加购物车)、0x0A=DeleteZzim(移除购物车)、0x0B=ViewWish(查看购物车)
+            //   Godot  ：0x09=我的出售、0x0B=我的购买
+            case 0x09 -> {
+                if (user.isOriginalITCClient()) {
+                    handleSetZzim(user, inPacket, auctionManager);
+                } else {
+                    handleMySaleList(user, auctionManager);
+                }
+            }
+            case 0x0A -> {
+                if (user.isOriginalITCClient()) {
+                    handleDeleteZzim(user, inPacket, auctionManager);
+                } else {
+                    log.warn("[ITC] Godot client sent unexpected sub-op 0x0A");
+                }
+            }
+            case 0x0B -> {
+                if (user.isOriginalITCClient()) {
+                    handleViewWish(user, auctionManager);
+                } else {
+                    handleMyPurchaseList(user, auctionManager);
+                }
+            }
             case 0x10 -> handleBuyItem(user, inPacket, auctionManager);
             case 0x12 -> handleRegisterAuctionItem(user, inPacket, auctionManager);
             case 0x13 -> handleBid(user, inPacket, auctionManager);
@@ -387,6 +409,50 @@ public final class ITCHandler {
         } catch (Exception e) {
             log.error("Failed to get user purchase listings for character {}", user.getCharacterId(), e);
             user.write(ITCPacket.userPurchaseListFailed());
+        }
+    }
+
+    /**
+     * 0x09 - SetZzim (原版 v95)：添加物品到购物车（愿望清单）。
+     * Packet: subOp(1), listingId(4)
+     * <p>matching reference: CITC::OnSetZzim_5733B0。响应 SetZzimDone(0x29) 会复位 m_bITCRequestSent，
+     * 避免客户端因标志位残留而无法继续发起 ITC 请求（切换 TAB）。
+     */
+    private static void handleSetZzim(User user, InPacket inPacket, AuctionManager auctionManager) {
+        final int listingId = inPacket.decodeInt();
+        if (auctionManager.setZzim(user, listingId)) {
+            user.write(ITCPacket.setZzimDone());
+        } else {
+            user.write(ITCPacket.setZzimFailed());
+        }
+    }
+
+    /**
+     * 0x0A - DeleteZzim (原版 v95)：从购物车移除物品。
+     * Packet: subOp(1), listingId(4)
+     * <p>matching reference: CITC::OnDeleteZzim_573520。
+     */
+    private static void handleDeleteZzim(User user, InPacket inPacket, AuctionManager auctionManager) {
+        final int listingId = inPacket.decodeInt();
+        if (auctionManager.deleteZzim(user, listingId)) {
+            user.write(ITCPacket.deleteZzimDone());
+        } else {
+            user.write(ITCPacket.deleteZzimFailed());
+        }
+    }
+
+    /**
+     * 0x0B - ViewWish (原版 v95)：查看购物车内容。
+     * Packet: subOp(1)
+     * <p>matching reference: CITC::OnViewWish_5735C0 → OnLoadWishSaleListDone_5769A0。
+     * 空列表是合法状态（原版提示"无登记内容…"），统一回 Done(count=0)。
+     */
+    private static void handleViewWish(User user, AuctionManager auctionManager) {
+        try {
+            user.write(ITCPacket.wishSaleListResult(auctionManager.getWishListings(user)));
+        } catch (Exception e) {
+            log.error("Failed to get wish list for character {}", user.getCharacterId(), e);
+            user.write(ITCPacket.wishSaleListFailed());
         }
     }
 

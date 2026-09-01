@@ -234,6 +234,71 @@ public final class ITCPacket {
     }
 
     /**
+     * OnSetZzimDone (0x29) - add to cart (wishlist) success.
+     * <p>matching reference: CITC::OnSetZzimDone_576140 — 仅读取子操作码，
+     * 弹出"放入购物车成功！"并复位 m_bITCRequestSent。
+     */
+    public static OutPacket setZzimDone() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x29);
+        return outPacket;
+    }
+
+    /**
+     * OnSetZzimFailed (0x2A) - add to cart (wishlist) failure (e.g. already in cart).
+     * <p>matching reference: CITC::OnSetZzimFailed_576180 — 提示"无法重复放入购物车！"并复位标志。
+     */
+    public static OutPacket setZzimFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x2A);
+        return outPacket;
+    }
+
+    /**
+     * OnDeleteZzimDone (0x2B) - remove from cart success.
+     * <p>matching reference: CITC::OnDeleteZzimDone_5761C0 — 提示"已从购物车列表中删除。"。
+     */
+    public static OutPacket deleteZzimDone() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x2B);
+        return outPacket;
+    }
+
+    /**
+     * OnDeleteZzimFailed (0x2C) - remove from cart failure.
+     * <p>matching reference: CITC::OnDeleteZzimFailed_5761F0 — 提示"购物车列表删除失败！"并复位标志。
+     */
+    public static OutPacket deleteZzimFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x2C);
+        return outPacket;
+    }
+
+    /**
+     * OnLoadWishSaleListDone (0x2D) - view cart (wishlist) contents.
+     * <p>matching reference: CITC::OnLoadWishSaleListDone_5769A0 — 读取 count + ITCITEM×count，
+     * 首行复位 m_bITCRequestSent，打开购物车对话框；count=0 时提示"无登记内容…"。
+     */
+    public static OutPacket wishSaleListResult(List<AuctionListing> listings) {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x2D);
+        outPacket.encodeInt(listings.size());
+        for (AuctionListing listing : listings) {
+            encodeITCITEM(outPacket, listing);
+        }
+        return outPacket;
+    }
+
+    /**
+     * OnLoadWishSaleListFailed (0x2E)
+     */
+    public static OutPacket wishSaleListFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x2E);
+        return outPacket;
+    }
+
+    /**
      * CartCheckoutResult (0x35) - batch cart checkout result.
      * <p>逐条上报成功情况：count + (listingId + success(1))×count，客户端据此结算购物车。
      */
