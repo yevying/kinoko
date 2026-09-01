@@ -351,6 +351,70 @@ public final class ITCPacket {
         return outPacket;
     }
 
+    /**
+     * OnBuyWishDone (0x2F) - 从购物车购买单件成功。
+     * <p>matching reference: CITC::OnBuyWishDone_576270 — 仅读取子操作码，
+     * 弹出"购买申请成功！"（原版 Done 不复位 m_bITCRequestSent）。
+     */
+    public static OutPacket buyWishDone() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x2F);
+        return outPacket;
+    }
+
+    /**
+     * OnBuyWishFailed (0x30) - 从购物车购买单件失败。
+     * <p>matching reference: CITC::OnBuyWishFailed_5762A0 — 提示"购买申请失败！"并复位标志。
+     */
+    public static OutPacket buyWishFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x30);
+        return outPacket;
+    }
+
+    /**
+     * OnCancelWishDone (0x31) - 从购物车移除单件成功。
+     * <p>matching reference: CITC::OnCancelWishDone_5762E0 — 提示"购买申请已取消。"并复位标志。
+     */
+    public static OutPacket cancelWishDone() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x31);
+        return outPacket;
+    }
+
+    /**
+     * OnCancelWishFailed (0x32) - 从购物车移除单件失败。
+     * <p>matching reference: CITC::OnCancelWishFailed_576320 — 提示"购买申请取消失败！"并复位标志。
+     */
+    public static OutPacket cancelWishFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x32);
+        return outPacket;
+    }
+
+    /**
+     * OnBuyZzimItemDone (0x35) - 从购物车直接购买单件成功（BuyZzim）。
+     * <p>matching reference: CITC::OnBuyZzimItemDone_5763D0 — 仅读取子操作码，
+     * 提示"你已成功购买该物品。"（原版 Done 不复位 m_bITCRequestSent）。
+     * 注意：此 0x35 与 Godot 的 CartCheckoutResult(0x35) 值相同但载荷不同，
+     * 二者互斥（v95 不发送 0x15 结算，Godot 不发送 0x11 BuyZzim），互不冲突。
+     */
+    public static OutPacket buyZzimItemDone() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x35);
+        return outPacket;
+    }
+
+    /**
+     * OnBuyZzimItemFailed (0x36) - 从购物车直接购买单件失败（BuyZzim）。
+     * <p>matching reference: CITC::OnBuyZzimItemFailed_576400 — 提示"购买物品失败。"并复位标志。
+     */
+    public static OutPacket buyZzimItemFailed() {
+        final OutPacket outPacket = OutPacket.of(OutHeader.ITCNormalItemResult);
+        outPacket.encodeByte(0x36);
+        return outPacket;
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // ITCITEM encoding
     // ---------------------------------------------------------------------------------------------------------------

@@ -61,12 +61,18 @@ public final class ITCHandler {
             }
             case 0x0B -> {
                 if (user.isOriginalITCClient()) {
-                    handleViewWish(user, auctionManager);
+                    handleViewWish(user, inPacket, auctionManager);
                 } else {
                     handleMyPurchaseList(user, auctionManager);
                 }
             }
+            // 0x0C/0x0D/0x11 仅为原版 v95 购物车操作（matching reference:
+            //   OnBuyWish_573660=0x0C、OnCancelWish_573700=0x0D、OnBuyZzim_573450=0x11），
+            //   Godot 客户端不使用（购物车经 0x15 批量结算）。
+            case 0x0C -> handleBuyWish(user, inPacket, auctionManager);
+            case 0x0D -> handleCancelWish(user, inPacket, auctionManager);
             case 0x10 -> handleBuyItem(user, inPacket, auctionManager);
+            case 0x11 -> handleBuyZzim(user, inPacket, auctionManager);
             case 0x12 -> handleRegisterAuctionItem(user, inPacket, auctionManager);
             case 0x13 -> handleBid(user, inPacket, auctionManager);
             case 0x14 -> handleBuyAuctionImm(user, inPacket, auctionManager);
@@ -443,16 +449,69 @@ public final class ITCHandler {
 
     /**
      * 0x0B - ViewWish (原版 v95)：查看购物车内容。
-     * Packet: subOp(1)
+     * Packet: subOp(1), listingId(4)（matching reference: OnViewWish_5735C0 — 携带 nITCSN）
      * <p>matching reference: CITC::OnViewWish_5735C0 → OnLoadWishSaleListDone_5769A0。
      * 空列表是合法状态（原版提示"无登记内容…"），统一回 Done(count=0)。
      */
-    private static void handleViewWish(User user, AuctionManager auctionManager) {
+    private static void handleViewWish(User user, InPacket inPacket, AuctionManager auctionManager) {
+        inPacket.decodeInt(); // nITCSN（原版客户端携带，消费避免残余字节）
         try {
             user.write(ITCPacket.wishSaleListResult(auctionManager.getWishListings(user)));
         } catch (Exception e) {
             log.error("Failed to get wish list for character {}", user.getCharacterId(), e);
             user.write(ITCPacket.wishSaleListFailed());
+        }
+    }
+
+    /**
+     * 0x0C - BuyWish (原版 v95)：从购物车购买单件物品（购买申请）。
+     * Packet: subOp(1), listingId(4)
+     * <p>matching reference: CITC::OnBuyWish_573660。
+     * 直接复用 buyItem（同单件购买路径：校验/扣 MaplePoint/发物品），
+     * 成功后发送背包操作 + OnBuyWishDone(0x2F)；失败 OnBuyWishFailed(0x30)（复位 m_bITCRequestSent）。
+     */
+    private static void handleBuyWish(User user, InPacket inPacket, AuctionManager auctionManager) {
+        final int listingId = inPacket.decodeInt();
+        Optional<List<InventoryOperation>> buyResult = auctionManager.buyItem(user, listingId);
+        if (buyResult.isPresent()) {
+            user.write(WvsContext.inventoryOperation(buyResult.get(), false));
+            user.write(ITCPacket.buyWishDone());
+            user.write(ITCPacket.queryCashResult(user.getAccount()));
+        } else {
+            user.write(ITCPacket.buyWishFailed());
+        }
+    }
+
+    /**
+     * 0x11 - BuyZzim (原版 v95)：从购物车直接购买单件物品（购买前确认）。
+     * Packet: subOp(1), listingId(4)
+     * <p>matching reference: CITC::OnBuyZzim_573450。
+     * 成功后 OnBuyZzimItemDone(0x35)；失败 OnBuyZzimItemFailed(0x36)（复位 m_bITCRequestSent）。
+     */
+    private static void handleBuyZzim(User user, InPacket inPacket, AuctionManager auctionManager) {
+        final int listingId = inPacket.decodeInt();
+        Optional<List<InventoryOperation>> buyResult = auctionManager.buyItem(user, listingId);
+        if (buyResult.isPresent()) {
+            user.write(WvsContext.inventoryOperation(buyResult.get(), false));
+            user.write(ITCPacket.buyZzimItemDone());
+            user.write(ITCPacket.queryCashResult(user.getAccount()));
+        } else {
+            user.write(ITCPacket.buyZzimItemFailed());
+        }
+    }
+
+    /**
+     * 0x0D - CancelWish (原版 v95)：从购物车移除单件物品。
+     * Packet: subOp(1), listingId(4)
+     * <p>matching reference: CITC::OnCancelWish_573700。
+     * 成功后 OnCancelWishDone(0x31)（复位 m_bITCRequestSent）；失败 OnCancelWishFailed(0x32)。
+     */
+    private static void handleCancelWish(User user, InPacket inPacket, AuctionManager auctionManager) {
+        final int listingId = inPacket.decodeInt();
+        if (auctionManager.deleteZzim(user, listingId)) {
+            user.write(ITCPacket.cancelWishDone());
+        } else {
+            user.write(ITCPacket.cancelWishFailed());
         }
     }
 
