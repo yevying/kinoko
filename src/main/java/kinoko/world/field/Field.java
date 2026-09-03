@@ -417,6 +417,11 @@ public final class Field {
             if (lifeInfo.getLifeType() != LifeType.NPC) {
                 continue;
             }
+            // 跳过地图 life 标记为隐藏的 NPC（如 Henesys Forest 的装饰性 "Henesys Forest" 景观点）。
+            // 与客户端 MapRenderer 单机加载一致，避免把本不该出现的 NPC 广播给玩家。
+            if (lifeInfo.isHide()) {
+                continue;
+            }
             final Optional<NpcTemplate> npcTemplateResult = NpcProvider.getNpcTemplate(lifeInfo.getTemplateId());
             if (npcTemplateResult.isEmpty()) {
                 continue;

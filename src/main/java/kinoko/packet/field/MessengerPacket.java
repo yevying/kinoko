@@ -62,7 +62,7 @@ public final class MessengerPacket {
     }
 
     public static OutPacket chat(String text) {
-        // CUIMessenger::OnChat
+        // CUIMessenger::OnChat - vanilla v95 expects a single string (message text)
         final OutPacket outPacket = MessengerPacket.of(MessengerProtocol.MSMP_Chat);
         outPacket.encodeString(text);
         return outPacket;

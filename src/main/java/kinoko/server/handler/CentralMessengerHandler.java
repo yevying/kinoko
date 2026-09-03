@@ -104,7 +104,11 @@ public final class CentralMessengerHandler {
                 // Update users
                 try (var lockedMessenger = messengerResult.get().acquire()) {
                     final Messenger messenger = lockedMessenger.get();
-                    final OutPacket outPacket = MessengerPacket.chat(message);
+                    // 服务器将发送者名字拼进消息，作为单个字符串转发给聊天室其他成员
+                    // （matching 095 CUIMessenger::OnChat 显示行格式 "Name : message"，
+                    //   参考 MiniRoomPacket::chat 先 format "%s : %s" 再编码单个 sText）。
+                    // 接收客户端不再需要额外的 sender 字段即可正确显示来源，且兼容原版 v95 客户端。
+                    final OutPacket outPacket = MessengerPacket.chat(String.format("%s : %s", remoteUser.getCharacterName(), message));
                     forEachMessengerUser(messenger, (user, node) -> {
                         if (user.getCharacterId() != remoteUser.getCharacterId()) {
                             node.write(CentralPacket.userPacketReceive(user.getCharacterId(), outPacket));
