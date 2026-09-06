@@ -31,6 +31,7 @@ public final class ChannelPacketHandler extends PacketHandler {
             PartyHandler.class,
             GuildHandler.class,
             FriendHandler.class,
+            FamilyHandler.class,
             PetHandler.class,
             SummonedHandler.class,
             AttackHandler.class,

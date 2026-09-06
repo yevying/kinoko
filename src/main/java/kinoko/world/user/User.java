@@ -1,5 +1,6 @@
 package kinoko.world.user;
 
+import kinoko.handler.user.FamilyHandler;
 import kinoko.handler.user.FriendHandler;
 import kinoko.packet.stage.StagePacket;
 import kinoko.packet.user.PetPacket;
@@ -83,6 +84,9 @@ public final class User extends Life {
     private int portableChairId;
     private String adBoard;
     private boolean inTransfer;
+    // 冒险学院（Family）瞬态状态 — v95 CWvsContext m_bFamilyInvite / 召唤请求挂起标记，不落库
+    private int familyPendingInvite;      // 本人发出同学登录邀请、等待对方答复的 charId（0 = 无）
+    private int familySummonRequestedBy;  // 已收到召唤请求、等待本人答复的召唤者 charId（0 = 无）
     // 原版 095 客户端使用完整物品序列化登记 ITC（Godot 客户端用槽位协议），
     // 由 ITCHandler 在解析到原版格式请求时置位，用于按客户端选择响应布局。
     private boolean originalITCClient;
@@ -356,6 +360,22 @@ public final class User extends Life {
         this.inTransfer = inTransfer;
     }
 
+    public int getFamilyPendingInvite() {
+        return familyPendingInvite;
+    }
+
+    public void setFamilyPendingInvite(int characterId) {
+        this.familyPendingInvite = characterId;
+    }
+
+    public int getFamilySummonRequestedBy() {
+        return familySummonRequestedBy;
+    }
+
+    public void setFamilySummonRequestedBy(int characterId) {
+        this.familySummonRequestedBy = characterId;
+    }
+
     public boolean isOriginalITCClient() {
         return originalITCClient;
     }
@@ -469,6 +489,8 @@ public final class User extends Life {
             setHp(getMaxHp());
             setMp(getMaxMp());
             getConnectedServer().notifyUserUpdate(this);
+            // 冒险学院名声度累积（v95 String[4645] — 同学升级时前辈名声度上升）
+            FamilyHandler.onCharacterLevelUp(this);
             // Max level
             if (getLevel() == GameConstants.getLevelMax(getJob())) {
                 getCharacterData().setMaxLevelTime(Instant.now());
@@ -937,6 +959,8 @@ public final class User extends Life {
                     getConnectedServer().submitUserPacketBroadcast(friendIds, FriendPacket.notify(getCharacterId(), GameConstants.CHANNEL_OFFLINE, false));
                 }
             });
+            // Notify family members (v95 out 106 bLogin=0)
+            FamilyHandler.onUserLogout(this);
         }
     }
 

@@ -2,6 +2,7 @@ package kinoko.handler.stage;
 
 import kinoko.database.DatabaseManager;
 import kinoko.handler.Handler;
+import kinoko.handler.user.FamilyHandler;
 import kinoko.handler.user.FriendHandler;
 import kinoko.packet.ClientPacket;
 import kinoko.packet.field.FieldPacket;
@@ -226,6 +227,9 @@ public final class MigrationHandler {
                         user.getConnectedServer().submitUserPacketBroadcast(friendIds, FriendPacket.notify(user.getCharacterId(), user.getChannelId(), false));
                     }
                 });
+
+                // Initialize family (v95 out 104 privilege list + out 106 login notify)
+                FamilyHandler.onUserLogin(user);
             });
         });
     }

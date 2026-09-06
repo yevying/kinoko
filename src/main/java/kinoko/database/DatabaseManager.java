@@ -23,6 +23,10 @@ public final class DatabaseManager {
         return connector.getFriendAccessor();
     }
 
+    public static FamilyAccessor familyAccessor() {
+        return connector.getFamilyAccessor();
+    }
+
     public static GuildAccessor guildAccessor() {
         return connector.getGuildAccessor();
     }

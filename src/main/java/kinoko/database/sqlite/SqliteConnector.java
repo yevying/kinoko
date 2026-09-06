@@ -16,6 +16,7 @@ public final class SqliteConnector implements DatabaseConnector {
     private AccountAccessor accountAccessor;
     private CharacterAccessor characterAccessor;
     private FriendAccessor friendAccessor;
+    private FamilyAccessor familyAccessor;
     private GuildAccessor guildAccessor;
     private GiftAccessor giftAccessor;
     private MemoAccessor memoAccessor;
@@ -39,6 +40,11 @@ public final class SqliteConnector implements DatabaseConnector {
     @Override
     public FriendAccessor getFriendAccessor() {
         return friendAccessor;
+    }
+
+    @Override
+    public FamilyAccessor getFamilyAccessor() {
+        return familyAccessor;
     }
 
     @Override
@@ -72,6 +78,7 @@ public final class SqliteConnector implements DatabaseConnector {
             SqliteAccountAccessor.createTable(connection);
             SqliteCharacterAccessor.createTable(connection);
             SqliteFriendAccessor.createTable(connection);
+            SqliteFamilyAccessor.createTable(connection);
             SqliteGuildAccessor.createTable(connection);
             SqliteGiftAccessor.createTable(connection);
             SqliteMemoAccessor.createTable(connection);
@@ -82,6 +89,7 @@ public final class SqliteConnector implements DatabaseConnector {
             accountAccessor = new SqliteAccountAccessor(connection);
             characterAccessor = new SqliteCharacterAccessor(connection);
             friendAccessor = new SqliteFriendAccessor(connection);
+            familyAccessor = new SqliteFamilyAccessor(connection);
             guildAccessor = new SqliteGuildAccessor(connection);
             giftAccessor = new SqliteGiftAccessor(connection);
             memoAccessor = new SqliteMemoAccessor(connection);

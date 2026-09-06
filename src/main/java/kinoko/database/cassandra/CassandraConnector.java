@@ -30,6 +30,7 @@ public final class CassandraConnector implements DatabaseConnector {
     private AccountAccessor accountAccessor;
     private CharacterAccessor characterAccessor;
     private FriendAccessor friendAccessor;
+    private FamilyAccessor familyAccessor;
     private GuildAccessor guildAccessor;
     private GiftAccessor giftAccessor;
     private MemoAccessor memoAccessor;
@@ -83,6 +84,11 @@ public final class CassandraConnector implements DatabaseConnector {
     }
 
     @Override
+    public FamilyAccessor getFamilyAccessor() {
+        return familyAccessor;
+    }
+
+    @Override
     public GuildAccessor getGuildAccessor() {
         return guildAccessor;
     }
@@ -130,6 +136,7 @@ public final class CassandraConnector implements DatabaseConnector {
             CassandraAccountAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraCharacterAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraFriendAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
+            CassandraFamilyAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraGuildAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraGiftAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
             CassandraMemoAccessor.createTable(cqlSession, DATABASE_KEYSPACE);
@@ -141,6 +148,7 @@ public final class CassandraConnector implements DatabaseConnector {
         accountAccessor = new CassandraAccountAccessor(cqlSession, DATABASE_KEYSPACE);
         characterAccessor = new CassandraCharacterAccessor(cqlSession, DATABASE_KEYSPACE);
         friendAccessor = new CassandraFriendAccessor(cqlSession, DATABASE_KEYSPACE);
+        familyAccessor = new CassandraFamilyAccessor(cqlSession, DATABASE_KEYSPACE);
         guildAccessor = new CassandraGuildAccessor(cqlSession, DATABASE_KEYSPACE);
         giftAccessor = new CassandraGiftAccessor(cqlSession, DATABASE_KEYSPACE);
         memoAccessor = new CassandraMemoAccessor(cqlSession, DATABASE_KEYSPACE);

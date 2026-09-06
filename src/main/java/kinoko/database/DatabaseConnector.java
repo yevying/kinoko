@@ -9,6 +9,8 @@ public interface DatabaseConnector {
 
     FriendAccessor getFriendAccessor();
 
+    FamilyAccessor getFamilyAccessor();
+
     GuildAccessor getGuildAccessor();
 
     GiftAccessor getGiftAccessor();
