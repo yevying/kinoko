@@ -458,7 +458,7 @@ public final class CashItemHandler extends ItemHandler {
                     throw new IllegalStateException("Could not update pet item");
                 }
                 user.write(WvsContext.inventoryOperation(updateResult.get(), true));
-                user.getField().broadcastPacket(PetPacket.petNameChanged(user, pet.getPetIndex(), petName));
+                user.getField().broadcastPacket(PetPacket.petNameChanged(user, pet.getPetIndex(), petName, pet.getNameTag()));
             }
             case SELECTNPC -> {
                 final int npcId = itemInfo.getInfo(ItemInfoType.npc);

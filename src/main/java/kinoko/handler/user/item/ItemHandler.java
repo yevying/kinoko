@@ -29,6 +29,7 @@ import kinoko.world.skill.SkillConstants;
 import kinoko.world.skill.SkillManager;
 import kinoko.world.skill.SkillRecord;
 import kinoko.world.user.Pet;
+import kinoko.world.user.PetAbility;
 import kinoko.world.user.User;
 import kinoko.world.user.effect.Effect;
 import org.apache.logging.log4j.LogManager;
@@ -543,7 +544,8 @@ public abstract class ItemHandler {
         }
 
         // Resolve pet
-        if (user.getPetIndex(petSn).isEmpty()) {
+        final Optional<Integer> petIndexResult = user.getPetIndex(petSn);
+        if (petIndexResult.isEmpty()) {
             log.error("Received PetStatChangeItemUseRequest for invalid pet SN : {}", petSn);
             user.dispose();
             return;
@@ -555,6 +557,22 @@ public abstract class ItemHandler {
             log.error("Could not resolve item info for item ID : {}", itemId);
             user.dispose();
             return;
+        }
+
+        // Validate pet consume ability（matching reference: v95 — 自动喝药须装备对应能力槽）：
+        // HP 恢复道具须 bit5（1812002），MP 恢复道具须 bit6（1812003）。
+        // 不匹配时仅 log + return，不 dispose（换装竞态下客户端请求可能晚到，踢线体验差）
+        final Pet pet = user.getPet(petIndexResult.get());
+        if (pet != null) {
+            final var specs = itemInfoResult.get().getItemSpecs().keySet();
+            final boolean isHpPotion = specs.contains(ItemSpecType.hp) || specs.contains(ItemSpecType.hpR);
+            final boolean isMpPotion = specs.contains(ItemSpecType.mp) || specs.contains(ItemSpecType.mpR);
+            if ((!isHpPotion && !isMpPotion) ||
+                    (isHpPotion && (pet.getPetSkill() & PetAbility.CONSUME_HP) == 0) ||
+                    (isMpPotion && (pet.getPetSkill() & PetAbility.CONSUME_MP) == 0)) {
+                log.error("Tried to use stat change item {} by pet without the required ability", itemId);
+                return;
+            }
         }
 
         // Check field limit

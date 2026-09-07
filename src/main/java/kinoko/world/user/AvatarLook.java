@@ -120,12 +120,14 @@ public final class AvatarLook implements Encodable {
             final int bodyPart = entry.getKey();
             final int itemId = entry.getValue().getItemId();
             if (bodyPart > BodyPart.HAIR.getValue() && bodyPart < BodyPart.EQUIPPED_END.getValue()) {
-                if (isCharacterEquipBodyPart(bodyPart)) {
+                if (isCharacterEquipBodyPart(bodyPart) || isPetWearBodyPart(bodyPart)) {
                     hairEquip.put(bodyPart, itemId);
                 }
             } else if (bodyPart >= BodyPart.CASH_BASE.getValue() && bodyPart < BodyPart.CASH_END.getValue()) {
                 // Cash Equips (overwrite), sorted map gives us entries in ascending order
-                if (bodyPart != BodyPart.CASH_WEAPON.getValue() && isCharacterEquipBodyPart(bodyPart - BodyPart.CASH_BASE.getValue())) {
+                if (bodyPart != BodyPart.CASH_WEAPON.getValue()
+                        && (isCharacterEquipBodyPart(bodyPart - BodyPart.CASH_BASE.getValue())
+                        || isPetWearBodyPart(bodyPart - BodyPart.CASH_BASE.getValue()))) {
                     hairEquip.put(bodyPart - BodyPart.CASH_BASE.getValue(), itemId);
                 }
             }
@@ -153,11 +155,10 @@ public final class AvatarLook implements Encodable {
      * Whether the body part is a character equip slot that belongs in the avatar look.
      * (matching reference: 095 is_correct_bodypart — anHairEquip 仅包含角色穿戴槽位)
      * <p>
-     * Pet equipment (PETWEAR, PETRING, PETABIL_*) and pet skill body parts are stored
-     * in the equipped inventory at cash body parts but must NOT be encoded into the
-     * avatar look — the v95 client only supports character equip body parts in
-     * anHairEquip and will throw while processing unknown body parts (e.g. 46,
-     * PETABIL_IGNOREITEMS1), which surfaces as a ClientDumpLog error on SelectWorldResult.
+     * Pet equipment (PETRING, PETABIL_*) and pet skill body parts are stored
+     * in the equipped inventory at cash body parts but must NOT be encoded into
+     * the avatar look. Pet wear slots (PETWEAR/PETWEAR2/PETWEAR3) are the
+     * exception: remote clients need them to render summoned pet equipment.
      * <p>
      * Mount equipment (TAMINGMOB, SADDLE, MOBEQUIP) IS a legitimate avatar look body
      * part in v95 — remote players need it to render the saddle/mount equip over their
@@ -169,6 +170,19 @@ public final class AvatarLook implements Encodable {
                 || (bodyPart >= BodyPart.MEDAL.getValue() && bodyPart <= BodyPart.SHOULDER.getValue())
                 || bodyPart == BodyPart.EXT_PENDANT1.getValue()
                 || bodyPart >= BodyPart.TAMINGMOB.getValue() && bodyPart <= BodyPart.MOBEQUIP.getValue();
+    }
+
+    /**
+     * Whether the body part is a pet wear slot (PETWEAR / PETWEAR2 / PETWEAR3).
+     * <p>
+     * Pet wear must be sent to remote clients through the avatar look so that other
+     * players can render the equipment worn by a remote player's summoned pets.
+     * (matching reference: 095 CAvatar::anHairEquip[14/30/38] → CPet::PrepareActionLayer_6A1B50)
+     */
+    private static boolean isPetWearBodyPart(int bodyPart) {
+        return bodyPart == BodyPart.PETWEAR.getValue()
+                || bodyPart == BodyPart.PETWEAR2.getValue()
+                || bodyPart == BodyPart.PETWEAR3.getValue();
     }
 
     private static int getPetId(Inventory cashInventory, long petSn) {

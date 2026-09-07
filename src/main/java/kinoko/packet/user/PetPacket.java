@@ -55,12 +55,12 @@ public final class PetPacket {
         return outPacket;
     }
 
-    public static OutPacket petNameChanged(User user, int petIndex, String name) {
+    public static OutPacket petNameChanged(User user, int petIndex, String name, boolean nameTag) {
         final OutPacket outPacket = OutPacket.of(OutHeader.PetNameChanged);
         outPacket.encodeInt(user.getCharacterId());
         outPacket.encodeByte(petIndex);
         outPacket.encodeString(name); // sName
-        outPacket.encodeByte(false); // nNameTag
+        outPacket.encodeByte(nameTag); // bNameTag
         return outPacket;
     }
 

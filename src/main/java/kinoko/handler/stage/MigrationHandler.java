@@ -148,6 +148,8 @@ public final class MigrationHandler {
                 // Create pet and assign to user
                 final Pet pet = Pet.from(user, item);
                 user.addPet(pet, true);
+                // 重算 petSkill（修复旧角色 JSON 中陈旧的 petSkill；随后 SetMultiPetInfo 下发新值）
+                PetAbility.refresh(user, pet.getPetIndex());
             }
 
             // Initialize dragon

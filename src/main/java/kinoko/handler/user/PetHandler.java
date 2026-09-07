@@ -20,6 +20,7 @@ import kinoko.world.item.*;
 import kinoko.world.job.explorer.Beginner;
 import kinoko.world.skill.SkillConstants;
 import kinoko.world.user.Pet;
+import kinoko.world.user.PetAbility;
 import kinoko.world.user.User;
 import kinoko.world.user.effect.Effect;
 import org.apache.logging.log4j.LogManager;
@@ -85,6 +86,8 @@ public final class PetHandler {
                     user.dispose();
                     return;
                 }
+                // 重算 petSkill（宠物回家期间可能换过能力装备）
+                PetAbility.refresh(user, pet.getPetIndex());
                 // Update client
                 user.getField().broadcastPacket(PetPacket.petActivated(user, pet));
                 user.write(PetPacket.petLoadExceptionList(user, pet.getPetIndex(), pet.getItemSn(), user.getConfigManager().getPetExceptionList()));
@@ -93,6 +96,8 @@ public final class PetHandler {
                 final Pet pet = Pet.from(user, item);
                 pet.setPosition(user.getField(), user.getX(), user.getY());
                 user.setPet(pet, 0, false);
+                // 重算 petSkill（宠物回家期间可能换过能力装备）
+                PetAbility.refresh(user, pet.getPetIndex());
                 // Update client
                 user.getField().broadcastPacket(PetPacket.petActivated(user, pet));
                 user.write(PetPacket.petLoadExceptionList(user, pet.getPetIndex(), pet.getItemSn(), user.getConfigManager().getPetExceptionList()));
@@ -239,9 +244,9 @@ public final class PetHandler {
         inPacket.decodeShort(); // pt->y
         final int objectId = inPacket.decodeInt(); // dwID
         inPacket.decodeInt(); // dwCliCrc
-        inPacket.decodeByte(); // bPickupOthers
-        inPacket.decodeByte(); // bSweepForDrop
-        inPacket.decodeByte(); // bLongRange
+        final byte bPickupOthers = inPacket.decodeByte();
+        inPacket.decodeByte(); // bSweepForDrop — 客户端扫荡表现，服务端不校验
+        inPacket.decodeByte(); // bLongRange — 客户端扫描半径，服务端不校验
 
         // Find drop in field
         final Field field = user.getField();
@@ -249,9 +254,43 @@ public final class PetHandler {
         if (dropResult.isEmpty()) {
             return;
         }
+        final Drop drop = dropResult.get();
+
+        // Validate pickup ability (matching reference: v95 TryPickUpDropByPet_511AB0)
+        final int petIndex = petIndexResult.get();
+        final Pet pet = user.getPet(petIndex);
+        if (pet == null) {
+            return;
+        }
+        final int skill = pet.getPetSkill();
+        final List<Integer> exceptionList = user.getConfigManager().getPetExceptionList();
+        if (drop.isMoney()) {
+            if ((skill & PetAbility.PICKUP_MESO) == 0) {
+                log.debug("Pet {} tried to pick up meso without magnet ability", petIndex);
+                return;
+            }
+            // 忽略列表仅在拾取宠物装备 bit7（1812007）时生效，金币用哨兵 ID
+            // (matching reference: v95 IsInExceptionList_50FDC0)
+            if ((skill & PetAbility.IGNORE_ITEMS) != 0 && exceptionList.contains(0x7FFFFFFF)) {
+                return;
+            }
+        } else {
+            if ((skill & PetAbility.PICKUP_ITEM) == 0) {
+                log.debug("Pet {} tried to pick up item without item bag ability", petIndex);
+                return;
+            }
+            // 15s 保护期由 Drop.canPickUp → pickUpDrop 既有逻辑保证
+            if (bPickupOthers == 1 && (skill & PetAbility.PICKUP_OTHERS) == 0) {
+                log.debug("Pet {} tried to pick up others' drop without pickup-others ability", petIndex);
+                return;
+            }
+            if ((skill & PetAbility.IGNORE_ITEMS) != 0 && exceptionList.contains(drop.getItem().getItemId())) {
+                return;
+            }
+        }
 
         // Pick up drop
-        field.getDropPool().pickUpDrop(user, dropResult.get(), DropLeaveType.PICKED_UP_BY_PET, petIndexResult.get());
+        field.getDropPool().pickUpDrop(user, drop, DropLeaveType.PICKED_UP_BY_PET, petIndex);
     }
 
     @Handler(InHeader.PetUpdateExceptionListRequest)

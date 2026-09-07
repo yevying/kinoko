@@ -57,6 +57,7 @@ import kinoko.world.skill.maker.MakerConstants;
 import kinoko.world.skill.maker.MakerResult;
 import kinoko.world.skill.maker.RecipeClass;
 import kinoko.world.user.Locker;
+import kinoko.world.user.PetAbility;
 import kinoko.world.user.User;
 import kinoko.world.user.data.*;
 import kinoko.world.user.effect.Effect;
@@ -515,9 +516,29 @@ public final class UserHandler {
         }
         // Update user
         if (inventoryType == InventoryType.EQUIP) {
+            // 宠物能力槽换装（穿戴/脱下/装备间互换）→ 重算 petSkill 并回推客户端
+            // (matching reference: v95 OnValidateStat → UpdatePetAbility_6A0A40)
+            refreshPetAbility(user, oldPos);
+            refreshPetAbility(user, newPos);
             user.getCharacterData().getCoupleRecord().reset(im.getEquipped(), im.getEquipInventory());
             user.validateStat();
             user.getField().broadcastPacket(UserRemote.avatarModified(user), user);
+        }
+    }
+
+    /** 若槽位为宠物能力现金槽，重算对应宠物的 petSkill（非负/非能力槽静默跳过）。 */
+    private static void refreshPetAbility(User user, short pos) {
+        if (pos >= 0) {
+            return;
+        }
+        final int slot = Math.abs(pos);
+        if (slot < BodyPart.CASH_BASE.getValue() || slot >= BodyPart.CASH_END.getValue()) {
+            return;
+        }
+        final BodyPart bodyPart = BodyPart.getByValue(slot - BodyPart.CASH_BASE.getValue());
+        final int petIndex = bodyPart != null ? PetAbility.getPetIndex(bodyPart) : -1;
+        if (petIndex >= 0) {
+            PetAbility.refresh(user, petIndex);
         }
     }
 
