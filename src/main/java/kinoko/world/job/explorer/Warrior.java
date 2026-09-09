@@ -242,10 +242,13 @@ public final class Warrior extends SkillProcessor {
                 });
                 return;
             case HP_RECOVERY:
-                final int hpRecovery = user.getMaxHp() * si.getValue(SkillStat.x, slv) / 100;
-                user.addHp(hpRecovery);
-                user.write(UserLocal.effect(Effect.incDecHpEffect(hpRecovery)));
-                field.broadcastPacket(UserRemote.effect(user, Effect.incDecHpEffect(hpRecovery)), user);
+                // 持续回血 Regen buff（matching kinoko SkillProcessor Recovery 1001：Regen nOption=每次回复量、
+                //  rOption=技能ID、时长固定 60s；skillId 已被 isAntiRepeatBuffSkill 纳入重复施放守卫。
+                //  现有 SkillProcessor.handleRecovery 按 setSchedule(skillId, +5s) 每 5 秒回血，
+                //  buff 到期随临时状态自然移除。WZ common 无 time 字段，故固定时长取 60s）
+                final int regenRecovery = user.getMaxHp() * si.getValue(SkillStat.x, slv) / 100;
+                user.setTemporaryStat(CharacterTemporaryStat.Regen, TemporaryStatOption.of(regenRecovery, skillId, 60_000));
+                user.setSchedule(skillId, Instant.now().plus(5, ChronoUnit.SECONDS));
                 return;
             case COMBAT_ORDERS:
                 user.setTemporaryStat(CharacterTemporaryStat.CombatOrders, TemporaryStatOption.of(si.getValue(SkillStat.x, slv), skillId, si.getDuration(slv)));

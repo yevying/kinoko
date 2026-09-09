@@ -183,6 +183,10 @@ public final class HitHandler {
         hitInfo.finalDamage = damage - powerGuardReduce - mesoGuardReduce - achillesReduce - comboBarrierReduce - magicGuardReduce - magicShieldReduce - blueAuraReduce;
         log.debug("Hit delta : {} = {} - {} - {} - {} - {} - {} - {} - {}", hitInfo.finalDamage, damage, powerGuardReduce, mesoGuardReduce, achillesReduce, comboBarrierReduce, magicGuardReduce, magicShieldReduce, blueAuraReduce);
 
+        // Process on hit effects that mutate the hit packet (Divine Shield guard flag must
+        // be resolved before damage is applied and broadcast).
+        handleDivineShield(user, hitInfo);
+
         // Process hit damage
         if (hitInfo.finalDamage > 0) {
             user.addHp(-hitInfo.finalDamage);
@@ -190,11 +194,9 @@ public final class HitHandler {
         if (hitInfo.mpDamage > 0) {
             user.addMp(-hitInfo.mpDamage);
         }
-        user.getField().broadcastPacket(UserRemote.hit(user, hitInfo), user);
 
-        // Process on hit effects
+        // Process remaining on hit effects
         handleGuardian(user, hitInfo);
-        handleDivineShield(user, hitInfo);
         handleBeholderCounter(user, hitInfo);
         handleEvasionBoost(user, hitInfo);
         handleVengeance(user, hitInfo);
@@ -363,8 +365,10 @@ public final class HitHandler {
         final int slv = user.getSkillLevel(skillId);
         // Check current stack count
         final SecondaryStat ss = user.getSecondaryStat();
-        if (ss.hasOption(CharacterTemporaryStat.BlessingArmor) && ss.hasOption(CharacterTemporaryStat.BlessingArmor)) {
-            // Decrement divine shield count
+        if (ss.hasOption(CharacterTemporaryStat.BlessingArmor)) {
+            // Divine Shield guard flag (95 project: bGuard = true)
+            hitInfo.guard = 1;
+            hitInfo.finalDamage = 0;
             final TemporaryStatOption option = ss.getOption(CharacterTemporaryStat.BlessingArmor);
             final int newCount = option.nOption - 1;
             if (newCount > 0) {
