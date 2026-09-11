@@ -14,6 +14,7 @@ public final class ConfigManager {
     private int petConsumeItem;
     private int petConsumeMpItem;
     private List<Integer> petExceptionList;
+    private boolean multiPetUnlocked;
 
     public ConfigManager(FuncKeyMapped[] funcKeyMap, int[] quickslotKeyMap) {
         assert funcKeyMap.length == GameConstants.FUNC_KEY_MAP_SIZE;
@@ -59,6 +60,14 @@ public final class ConfigManager {
 
     public void setPetExceptionList(List<Integer> petExceptionList) {
         this.petExceptionList = petExceptionList;
+    }
+
+    public boolean isMultiPetUnlocked() {
+        return multiPetUnlocked;
+    }
+
+    public void setMultiPetUnlocked(boolean multiPetUnlocked) {
+        this.multiPetUnlocked = multiPetUnlocked;
     }
 
 

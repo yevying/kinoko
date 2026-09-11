@@ -78,12 +78,13 @@ public final class NioBufferOutPacket implements OutPacket {
             value = "";
         }
         ensureSize(length);
-        if (value.length() > length) {
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > length) {
             log.error("Encoding a string that is too long, string will be truncated");
-            getBuffer().put(value.substring(0, length).getBytes(StandardCharsets.US_ASCII));
+            getBuffer().put(bytes, 0, length);
         } else {
-            getBuffer().put(value.getBytes(StandardCharsets.US_ASCII));
-            getBuffer().put(new byte[length - value.length()]);
+            getBuffer().put(bytes);
+            getBuffer().put(new byte[length - bytes.length]);
         }
     }
 
@@ -92,13 +93,14 @@ public final class NioBufferOutPacket implements OutPacket {
         if (value == null) {
             value = "";
         }
-        if (value.length() > Short.MAX_VALUE) {
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > Short.MAX_VALUE) {
             log.error("Encoding a string that is too long, string will be truncated");
         }
-        final int length = Math.min(value.length(), Short.MAX_VALUE);
+        final int length = Math.min(bytes.length, Short.MAX_VALUE);
         ensureSize(2 + length);
-        getBuffer().putShort((short) value.length());
-        getBuffer().put(value.getBytes(StandardCharsets.US_ASCII));
+        getBuffer().putShort((short) length);
+        getBuffer().put(bytes, 0, length);
     }
 
     @Override

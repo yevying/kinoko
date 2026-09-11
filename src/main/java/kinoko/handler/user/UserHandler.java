@@ -58,6 +58,7 @@ import kinoko.world.skill.maker.MakerResult;
 import kinoko.world.skill.maker.RecipeClass;
 import kinoko.world.user.Locker;
 import kinoko.world.user.PetAbility;
+import kinoko.world.user.PetChatResponder;
 import kinoko.world.user.User;
 import kinoko.world.user.data.*;
 import kinoko.world.user.effect.Effect;
@@ -130,6 +131,27 @@ public final class UserHandler {
             return;
         }
         user.getField().broadcastPacket(UserPacket.userChat(user, ChatType.NORMAL, text, onlyBalloon));
+
+        // 关键词触发 + 宠物回话：聊天文本命中宠物关键词时，额外广播一条 PetAction
+        // 让玩家自己的宠物播放动作并弹回话气泡。
+        // 注意三处约定，缺一原版客户端会闪退：
+        //  1) type 必须用 INTERACT(0)——客户端用户动作（坐下哭/长站睡）即以此类型经
+        //     PetHandler.handlePetAction 转发，原版 OnAction 在 INTERACT 分支下才读取
+        //     chat 串与 balloon 字节；CHAT(2)/RANDOM(3) 会走不同分支而解包错位。
+        //  2) 必须排除发送者本人（broadcastPacket(packet, user)）——v95 约定服务端不把
+        //     宠物动作/气泡回推给宠物主人，否则原版客户端收到自身宠物动作即闪退。
+        //     主人视角由各客户端自行驱动：Godot 客户端在聊天发送时本地镜像匹配
+        //     （MapleClient PetChatResponder.TryRespondLocal），不依赖本广播。
+        //  3) 回话文本保持纯英文/ASCII——本项目网络字符串为 UTF-8 协议，但原版 095
+        //     客户端按 EUC-KR 解包，多字节 UTF-8 中文回话在其气泡中会乱码；ASCII 全端安全。
+        if (!user.getPets().isEmpty()) {
+            PetChatResponder.respond(user, text).ifPresent(response -> {
+                final int petIndex = user.getPets().get(0).getPetIndex();
+                user.getField().broadcastPacket(
+                        PetPacket.petAction(user, petIndex, PetActionType.INTERACT.getValue(),
+                                response.action, response.reply, true), user);
+            });
+        }
     }
 
     @Handler(InHeader.UserADBoardClose)

@@ -27,6 +27,7 @@ public final class ItemConstants {
     public static final int MIRACLE_CUBE = 5062000;
     public static final int REGULAR_STORE_PERMIT = 5140000;
     public static final int WHEEL_OF_DESTINY = 5510000;
+    public static final int PET_SLOT_COUPON = 5460000;
 
 
     // ITEM UPGRADE CONSTANTS ------------------------------------------------------------------------------------------

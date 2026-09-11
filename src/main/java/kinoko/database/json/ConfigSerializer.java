@@ -61,6 +61,7 @@ public final class ConfigSerializer implements JsonSerializer<ConfigManager> {
         object.put(PET_CONSUME_ITEM, cm.getPetConsumeItem());
         object.put(PET_CONSUME_MP_ITEM, cm.getPetConsumeMpItem());
         object.put(PET_EXCEPTION_LIST, new JSONArray(cm.getPetExceptionList()));
+        object.put(MULTI_PET_UNLOCKED, cm.isMultiPetUnlocked());
         return object;
     }
 
@@ -107,6 +108,7 @@ public final class ConfigSerializer implements JsonSerializer<ConfigManager> {
         cm.setPetConsumeItem(object.getIntValue(PET_CONSUME_ITEM));
         cm.setPetConsumeMpItem(object.getIntValue(PET_CONSUME_MP_ITEM));
         cm.setPetExceptionList(object.getJSONArray(PET_EXCEPTION_LIST).toList(Integer.class));
+        cm.setMultiPetUnlocked(object.getBooleanValue(MULTI_PET_UNLOCKED));
         return cm;
     }
 }

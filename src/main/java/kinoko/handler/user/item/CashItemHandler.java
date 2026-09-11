@@ -682,6 +682,27 @@ public final class CashItemHandler extends ItemHandler {
                     user.write(UserLocal.effect(Effect.lotteryUse(itemId, rewardEntry.getEffect())));
                 }
             }
+            case PETSNACK -> {
+                if (item.getItemId() != ItemConstants.PET_SLOT_COUPON) {
+                    log.error("Unhandled pet snack item {}", item.getItemId());
+                    user.dispose();
+                    return;
+                }
+                if (user.getConfigManager().isMultiPetUnlocked()) {
+                    user.write(MessagePacket.system("你已解锁多宠物携带能力，无需重复使用。"));
+                    user.dispose();
+                    return;
+                }
+                final Optional<InventoryOperation> removeResult = im.removeItem(position, item, 1);
+                if (removeResult.isEmpty()) {
+                    log.error("Could not remove pet slot coupon {} in position {}", item.getItemId(), position);
+                    user.dispose();
+                    return;
+                }
+                user.write(WvsContext.inventoryOperation(removeResult.get(), true));
+                user.getConfigManager().setMultiPetUnlocked(true);
+                user.write(MessagePacket.system("已解锁！现在最多可同时携带 3 只宠物。"));
+            }
             case null -> {
                 log.error("Unknown cash item type for item ID : {}", item.getItemId());
                 user.dispose();

@@ -7,4 +7,5 @@ public final class ConfigSchema {
     public static final String PET_CONSUME_ITEM = "pet_consume_item";
     public static final String PET_CONSUME_MP_ITEM = "pet_consume_mp_item";
     public static final String PET_EXCEPTION_LIST = "pet_exception_list";
+    public static final String MULTI_PET_UNLOCKED = "multi_pet_unlocked";
 }
