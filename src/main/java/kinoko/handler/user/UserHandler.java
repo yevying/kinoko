@@ -57,6 +57,7 @@ import kinoko.world.skill.maker.MakerConstants;
 import kinoko.world.skill.maker.MakerResult;
 import kinoko.world.skill.maker.RecipeClass;
 import kinoko.world.user.Locker;
+import kinoko.world.user.Pet;
 import kinoko.world.user.PetAbility;
 import kinoko.world.user.PetChatResponder;
 import kinoko.world.user.User;
@@ -145,11 +146,14 @@ public final class UserHandler {
         //  3) 回话文本保持纯英文/ASCII——本项目网络字符串为 UTF-8 协议，但原版 095
         //     客户端按 EUC-KR 解包，多字节 UTF-8 中文回话在其气泡中会乱码；ASCII 全端安全。
         if (!user.getPets().isEmpty()) {
+            final Pet pet = user.getPets().get(0);
+            // bChatBalloon 用主人实际的气泡戒指状态（matching reference: 095 ChatCommand_6A4020 —
+            //  m_bChatBalloon 由 UpdatePetAbility 按 PETRING_QUOTE 槽是否装备设置；远端 DoAction
+            //  nIdx = bChatBalloon ? 模板 info/chatBalloon : 0 → "UI/ChatBalloon.img/pet/{idx}"）
             PetChatResponder.respond(user, text).ifPresent(response -> {
-                final int petIndex = user.getPets().get(0).getPetIndex();
                 user.getField().broadcastPacket(
-                        PetPacket.petAction(user, petIndex, PetActionType.INTERACT.getValue(),
-                                response.action, response.reply, true), user);
+                        PetPacket.petAction(user, pet.getPetIndex(), PetActionType.INTERACT.getValue(),
+                                response.action, response.reply, pet.getChatBalloon()), user);
             });
         }
     }

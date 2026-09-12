@@ -10,7 +10,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * 聊天关键词 → 宠物回话（“关键词触发 + 宠物回话”双轨聊天互动）。
  * <p>
  * 玩家在聊天窗口输入包含宠物关键词的普通话语时，服务器在正常广播该聊天之余，
- * 额外广播一条 PetAction 让宠物播放动作并弹回话气泡（含发送者，便于本人也看到）。
+ * 额外广播一条 PetAction 让其他玩家的宠物播放动作并弹回话气泡（排除发送者本人——
+ * v95 约定：原版客户端收到自身宠物的 PetAction 会闪退；主人视角由各客户端本地镜像驱动）。
  * 本类只负责关键词匹配 + 每玩家冷却；宠物动作/气泡渲染由客户端既有链路完成
  * （OnRemotePetAction → PetNode.PlayAction → ShowChatBalloon）。
  */
