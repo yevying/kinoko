@@ -486,6 +486,16 @@ public final class CalcDamage {
         final PassiveSkillData psd = user.getPassiveSkillData();
         // nMAD + incMAD + nPsdMADX
         int mad = ss.getMad() + ss.getOption(CharacterTemporaryStat.MAD).nOption + psd.getMadX();
+        // Element amplification (MAGE_FP/IL, BlazeWizard, Evan)被动提升魔法攻击力：
+        // 与 CSkillInfo::getMpCon 读取 x 提升 MP 消耗一致，此处读取 y 倍乘 MAD
+        // (matching 095 Element Amplification — "Increases MP cost and Magic Attack")
+        final int amplificationSkill = SkillConstants.getAmplificationSkill(user.getJob());
+        if (amplificationSkill != 0) {
+            final int incMad = user.getSkillStatValue(amplificationSkill, SkillStat.y);
+            if (incMad > 0) {
+                mad = incMad * mad / 100;
+            }
+        }
         // Apply madR
         final int dragonFury = Evan.isDragonFury(user) ? user.getSkillStatValue(Evan.DRAGON_FURY, SkillStat.damage) : 0;
         final int statMadR = ss.getOption(CharacterTemporaryStat.MaxLevelBuff).nOption +

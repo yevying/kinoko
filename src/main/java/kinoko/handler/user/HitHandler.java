@@ -28,7 +28,9 @@ import kinoko.world.item.BodyPart;
 import kinoko.world.item.InventoryManager;
 import kinoko.world.item.Item;
 import kinoko.world.item.WeaponType;
+import kinoko.world.job.JobConstants;
 import kinoko.world.job.explorer.Bowman;
+import kinoko.world.job.explorer.Magician;
 import kinoko.world.job.explorer.Pirate;
 import kinoko.world.job.explorer.Thief;
 import kinoko.world.job.explorer.Warrior;
@@ -173,6 +175,7 @@ public final class HitHandler {
         final int mesoGuardReduce = handleMesoGuard(user, hitInfo);
 
         final int achillesReduce = getAchillesReduce(user, damage);
+        final int elementalResistReduce = getElementalResistanceReduce(user, hitInfo.magicElemAttr, damage);
         final int comboBarrierReduce = getComboBarrierReduce(user, damage, achillesReduce);
 
         final int magicGuardReduce = getMagicGuardReduce(user, damage);
@@ -180,8 +183,8 @@ public final class HitHandler {
         final int blueAuraReduce = getBlueAuraReduce(user, damage);
 
         // Final damage
-        hitInfo.finalDamage = damage - powerGuardReduce - mesoGuardReduce - achillesReduce - comboBarrierReduce - magicGuardReduce - magicShieldReduce - blueAuraReduce;
-        log.debug("Hit delta : {} = {} - {} - {} - {} - {} - {} - {} - {}", hitInfo.finalDamage, damage, powerGuardReduce, mesoGuardReduce, achillesReduce, comboBarrierReduce, magicGuardReduce, magicShieldReduce, blueAuraReduce);
+        hitInfo.finalDamage = damage - powerGuardReduce - mesoGuardReduce - achillesReduce - elementalResistReduce - comboBarrierReduce - magicGuardReduce - magicShieldReduce - blueAuraReduce;
+        log.debug("Hit delta : {} = {} - {} - {} - {} - {} - {} - {} - {} - {}", hitInfo.finalDamage, damage, powerGuardReduce, mesoGuardReduce, achillesReduce, elementalResistReduce, comboBarrierReduce, magicGuardReduce, magicShieldReduce, blueAuraReduce);
 
         // Process on hit effects that mutate the hit packet (Divine Shield guard flag must
         // be resolved before damage is applied and broadcast).
@@ -288,6 +291,38 @@ public final class HitHandler {
             return 0;
         }
         return damage * (1000 - x) / 1000;
+    }
+
+    /**
+     * 三系法师元素抗性被动减伤（matching reference v95 get_resistance）：
+     * 火毒 2110000 / 冰雷 2210000 / 主教 2310000。按怪物攻击元素（nMagicElemAttr 位掩码，
+     * FIRE=0x01, ICE=0x02, LIGHT=0x04, POISON=0x08, HOLY=0x10, DARK=0x20）判断是否命中该系抗性，
+     * 命中时减去 x% 伤害。物理/无元素攻击（magicElemAttr==0）不减免。
+     */
+    private static int getElementalResistanceReduce(User user, int magicElemAttr, int damage) {
+        if (magicElemAttr == 0) {
+            return 0;
+        }
+        int skillId;
+        int resistedMask;
+        if (JobConstants.isFirePoisonJob(user.getJob())) { // 210/211/212
+            skillId = Magician.PARTIAL_RESISTANCE_FP;
+            resistedMask = 0x09; // FIRE | POISON
+        } else if (JobConstants.isIceLightningJob(user.getJob())) { // 220/221/222
+            skillId = Magician.PARTIAL_RESISTANCE_IL;
+            resistedMask = 0x06; // ICE | LIGHT
+        } else if (JobConstants.isBishopJob(user.getJob())) { // 230/231/232
+            skillId = Magician.ELEMENTAL_RESISTANCE_BISH;
+            resistedMask = 0x3F; // 所有元素
+        } else {
+            return 0;
+        }
+        final int slv = user.getSkillLevel(skillId);
+        if (slv == 0 || (magicElemAttr & resistedMask) == 0) {
+            return 0;
+        }
+        final int x = user.getSkillStatValue(skillId, SkillStat.x);
+        return damage * x / 100;
     }
 
     private static int getComboBarrierReduce(User user, int damage, int achillesReduce) {
