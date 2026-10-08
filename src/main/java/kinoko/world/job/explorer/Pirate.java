@@ -6,6 +6,7 @@ import kinoko.packet.user.UserRemote;
 import kinoko.provider.SkillProvider;
 import kinoko.provider.skill.SkillInfo;
 import kinoko.provider.skill.SkillStat;
+import kinoko.server.ServerConfig;
 import kinoko.util.Util;
 import kinoko.world.field.Field;
 import kinoko.world.field.mob.BurnedInfo;
@@ -142,7 +143,7 @@ public final class Pirate extends SkillProcessor {
             case HYPNOTIZE:
                 if (!mob.isBoss() && Util.succeedProp(si.getValue(SkillStat.prop, slv))) {
                     mob.setTemporaryStat(MobTemporaryStat.Dazzle, MobStatOption.of(1, skillId, si.getDuration(slv)), delay);
-                    if (mob.getController() != user) {
+                    if (!ServerConfig.SERVER_AUTHORITATIVE_MOBS && mob.getController() != user) {
                         mob.setController(user);
                         user.write(MobPacket.mobChangeController(mob, true));
                         field.broadcastPacket(MobPacket.mobChangeController(mob, false), user);

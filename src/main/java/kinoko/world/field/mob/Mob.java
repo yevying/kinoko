@@ -49,6 +49,8 @@ public final class Mob extends Life implements ControlledObject, Encodable {
     private final MobTemplate template;
     private final MobSpawnPoint spawnPoint;
     private final int startFoothold;
+    private final int spawnX;
+    private final int spawnY;
 
     private User controller;
     private int hp;
@@ -64,11 +66,14 @@ public final class Mob extends Life implements ControlledObject, Encodable {
     private Instant nextRecovery;
     private Instant removeAfter;
     private Instant nextDropItem;
+    private final MobBehavior behavior;
 
     public Mob(MobTemplate template, MobSpawnPoint spawnPoint, int x, int y, int fh) {
         this.template = template;
         this.spawnPoint = spawnPoint;
         this.startFoothold = fh;
+        this.spawnX = x;
+        this.spawnY = y;
         // Life initialization
         setX(x);
         setY(y);
@@ -83,6 +88,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
         this.nextRecovery = Instant.now().plus(GameConstants.MOB_RECOVER_TIME, ChronoUnit.SECONDS);
         this.removeAfter = template.getRemoveAfter() > 0 ? Instant.now().plus(template.getRemoveAfter(), ChronoUnit.SECONDS) : Instant.MAX;
         this.nextDropItem = template.getDropItemPeriod() > 0 ? Instant.now().plus(template.getDropItemPeriod(), ChronoUnit.SECONDS) : Instant.MAX;
+        this.behavior = new MobBehavior(this);
     }
 
     public MobTemplate getTemplate() {
@@ -91,6 +97,18 @@ public final class Mob extends Life implements ControlledObject, Encodable {
 
     public int getTemplateId() {
         return template.getId();
+    }
+
+    public int getSpawnX() {
+        return spawnX;
+    }
+
+    public int getSpawnY() {
+        return spawnY;
+    }
+
+    public MobBehavior getBehavior() {
+        return behavior;
     }
 
     public int getLevel() {
@@ -376,6 +394,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
         final int actualDamage = Math.min(getHp() - 1, burnDamage);
         damageDone.put(attackerId, damageDone.getOrDefault(attackerId, 0) + actualDamage);
         updateHp(getHp() - actualDamage);
+        getBehavior().setHate(attackerId);
     }
 
     public void damage(User attacker, int totalDamage, int delay) {
@@ -398,6 +417,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
         final int actualDamage = Math.min(getHp(), scaled);
         damageDone.put(attacker.getCharacterId(), damageDone.getOrDefault(attacker.getCharacterId(), 0) + actualDamage);
         updateHp(getHp() - actualDamage);
+        getBehavior().setHate(attacker.getCharacterId());
         // Handle death
         if (getHp() <= 0) {
             if (getController() != null) {

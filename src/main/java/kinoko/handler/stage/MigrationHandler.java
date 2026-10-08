@@ -457,6 +457,12 @@ public final class MigrationHandler {
         }
         // Resolve Portal
         Optional<PortalInfo> targetPortalResult = targetField.getPortalByName(portalName);
+        if (targetPortalResult.isEmpty() && !GameConstants.DEFAULT_PORTAL_NAME.equals(portalName)) {
+            // Broken tn reference in WZ: fall back to the start point before resorting to portal 0,
+            // which may be an unrelated exit portal and spawn the player at the wrong position.
+            log.warn("Tried to warp to portal : {} on field ID : {}, not found - defaulting to {}", portalName, targetField.getFieldId(), GameConstants.DEFAULT_PORTAL_NAME);
+            targetPortalResult = targetField.getPortalByName(GameConstants.DEFAULT_PORTAL_NAME);
+        }
         if (targetPortalResult.isEmpty()) {
             log.warn("Tried to warp to portal : {} on field ID : {}, defaulting to 0", portalName, targetField.getFieldId());
             targetPortalResult = targetField.getPortalById(0);

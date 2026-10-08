@@ -41,8 +41,11 @@ public final class MobTemplate {
     private final Set<Integer> damagedBySkill;
     private final List<Integer> revives;
     private final int reviveDelay;
+    private final int speed;
+    private final int moveAbility;
+    private final int flySpeed;
 
-    public MobTemplate(int id, int level, int exp, int maxHp, int maxMp, int pad, int pdr, int mad, int mdr, int acc, int eva, int hpRecovery, int mpRecovery, int fixedDamage, int removeAfter, int dropItemPeriod, int hpTagColor, int hpTagBgColor, boolean boss, boolean noFlip, boolean pickUpDrop, boolean firstAttack, boolean damagedByMob, boolean onlyNormalAttack, Map<Integer, MobAttack> attacks, Map<Integer, MobSkill> skills, Map<ElementAttribute, DamagedAttribute> damagedElemAttr, Set<Integer> damagedBySkill, List<Integer> revives, int reviveDelay) {
+    public MobTemplate(int id, int level, int exp, int maxHp, int maxMp, int pad, int pdr, int mad, int mdr, int acc, int eva, int hpRecovery, int mpRecovery, int fixedDamage, int removeAfter, int dropItemPeriod, int hpTagColor, int hpTagBgColor, boolean boss, boolean noFlip, boolean pickUpDrop, boolean firstAttack, boolean damagedByMob, boolean onlyNormalAttack, Map<Integer, MobAttack> attacks, Map<Integer, MobSkill> skills, Map<ElementAttribute, DamagedAttribute> damagedElemAttr, Set<Integer> damagedBySkill, List<Integer> revives, int reviveDelay, int speed, int moveAbility, int flySpeed) {
         this.id = id;
         this.level = level;
         this.exp = exp;
@@ -73,6 +76,9 @@ public final class MobTemplate {
         this.damagedBySkill = damagedBySkill;
         this.revives = revives;
         this.reviveDelay = reviveDelay;
+        this.speed = speed;
+        this.moveAbility = moveAbility;
+        this.flySpeed = flySpeed;
     }
 
     public int getId() {
@@ -213,6 +219,23 @@ public final class MobTemplate {
         return reviveDelay;
     }
 
+    public int getSpeed() {
+        return speed;
+    }
+
+    /** 4 表示飞行怪（free 2D movement），其余为地面怪。 */
+    public int getMoveAbility() {
+        return moveAbility;
+    }
+
+    public int getFlySpeed() {
+        return flySpeed;
+    }
+
+    public boolean isFlying() {
+        return moveAbility == 4;
+    }
+
     @Override
     public String toString() {
         return "MobTemplate{" +
@@ -246,6 +269,9 @@ public final class MobTemplate {
                 ", damagedBySkill=" + damagedBySkill +
                 ", revives=" + revives +
                 ", reviveDelay=" + reviveDelay +
+                ", speed=" + speed +
+                ", moveAbility=" + moveAbility +
+                ", flySpeed=" + flySpeed +
                 '}';
     }
 
@@ -278,6 +304,9 @@ public final class MobTemplate {
         final Map<ElementAttribute, DamagedAttribute> damagedElemAttr = new EnumMap<>(ElementAttribute.class);
         final Set<Integer> damagedBySkill = new HashSet<>();
         final List<Integer> revives = new ArrayList<>();
+        int speed = 0;
+        int moveAbility = 0;
+        int flySpeed = 0;
         // Process attacks
         for (var entry : mobProp.getItems().entrySet()) {
             if (entry.getKey().startsWith("attack")) {
@@ -399,6 +428,15 @@ public final class MobTemplate {
                 case "onlyNormalAttack" -> {
                     onlyNormalAttack = WzProvider.getInteger(infoEntry.getValue()) != 0;
                 }
+                case "speed" -> {
+                    speed = WzProvider.getInteger(infoEntry.getValue());
+                }
+                case "moveAbility" -> {
+                    moveAbility = WzProvider.getInteger(infoEntry.getValue());
+                }
+                case "flySpeed" -> {
+                    flySpeed = WzProvider.getInteger(infoEntry.getValue());
+                }
                 case "skill" -> {
                     if (!(infoEntry.getValue() instanceof WzProperty skillEntries)) {
                         throw new ProviderError("Failed to resolve mob skills for mob : %d", mobId);
@@ -492,7 +530,10 @@ public final class MobTemplate {
                 Collections.unmodifiableMap(damagedElemAttr),
                 Collections.unmodifiableSet(damagedBySkill),
                 Collections.unmodifiableList(revives),
-                reviveDelay
+                reviveDelay,
+                speed,
+                moveAbility,
+                flySpeed
         );
     }
 

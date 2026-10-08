@@ -28,6 +28,7 @@ public final class ServerConfig {
     public static final String COMMAND_PREFIX = Util.getEnv("COMMAND_PREFIX", "!");
     public static final boolean DEBUG_MODE = Util.getEnv("DEBUG_MODE", true);
     public static final boolean PLAIN_TRAFFIC = Util.getEnv("PLAIN_TRAFFIC", false);
+    public static final boolean SERVER_AUTHORITATIVE_MOBS = Util.getEnv("SERVER_AUTHORITATIVE_MOBS", true);
 
     public static final int ITC_PORT = Util.getEnv("ITC_PORT", 8590);
 }

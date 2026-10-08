@@ -10,6 +10,7 @@ import kinoko.provider.map.Foothold;
 import kinoko.provider.mob.MobTemplate;
 import kinoko.provider.skill.SkillInfo;
 import kinoko.provider.skill.SkillStat;
+import kinoko.server.ServerConfig;
 import kinoko.world.GameConstants;
 import kinoko.world.field.Field;
 import kinoko.world.field.mob.Mob;
@@ -118,7 +119,7 @@ public final class Citizen extends SkillProcessor {
                 mob.setRemoveAfter(Instant.now().plus(si.getDuration(slv), ChronoUnit.MILLIS));
                 // Add mob to field, force user to be its controller
                 field.getMobPool().addMob(mob);
-                if (mob.getController() != user) {
+                if (!ServerConfig.SERVER_AUTHORITATIVE_MOBS && mob.getController() != user) {
                     mob.setController(user);
                     user.write(MobPacket.mobChangeController(mob, true));
                     field.broadcastPacket(MobPacket.mobChangeController(mob, false), user);

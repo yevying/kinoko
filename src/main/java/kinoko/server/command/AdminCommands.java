@@ -112,7 +112,7 @@ public final class AdminCommands {
         if (nearestMobResult.isPresent()) {
             final Mob mob = nearestMobResult.get();
             user.write(MessagePacket.system(mob.toString()));
-            user.write(MessagePacket.system("  Controller : %s", mob.getController().getCharacterName()));
+            user.write(MessagePacket.system("  Controller : %s", mob.getController() != null ? mob.getController().getCharacterName() : "none (server-authoritative)"));
         }
         // Compute nearest npc
         final Optional<Npc> nearestNpcResult = user.getNearestObject(field.getNpcPool().getInsideRect(user.getRelativeRect(detectRect)));

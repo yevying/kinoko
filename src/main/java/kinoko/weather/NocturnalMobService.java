@@ -178,9 +178,10 @@ public final class NocturnalMobService {
             return;
         }
 
-        Collections.shuffle(anchors);
-        for (int i = 0; i < missing && i < anchors.size(); i++) {
-            final MobSpawnPoint sp = anchors.get(i);
+        final List<MobSpawnPoint> shuffled = new ArrayList<>(anchors);
+        Collections.shuffle(shuffled);
+        for (int i = 0; i < missing && i < shuffled.size(); i++) {
+            final MobSpawnPoint sp = shuffled.get(i);
             final Optional<MobTemplate> template = MobProvider.getMobTemplate(pool.nextMobId());
             if (template.isEmpty()) {
                 continue;

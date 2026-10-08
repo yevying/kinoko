@@ -17,6 +17,7 @@ import kinoko.provider.skill.SkillStat;
 import kinoko.provider.skill.SummonInfo;
 import kinoko.script.party.HenesysPQ;
 import kinoko.script.quest.EvanQuest;
+import kinoko.server.ServerConfig;
 import kinoko.server.header.InHeader;
 import kinoko.server.packet.InPacket;
 import kinoko.util.Rect;
@@ -47,6 +48,10 @@ public final class MobHandler {
 
     @Handler(InHeader.MobMove)
     public static void handleMobMove(User user, InPacket inPacket) {
+        // 服务端权威模式下，怪物移动完全由服务端驱动，忽略所有控制器客户端上报的移动路径。
+        if (ServerConfig.SERVER_AUTHORITATIVE_MOBS) {
+            return;
+        }
         // CMob::GenerateMovePath
         final int objectId = inPacket.decodeInt(); // dwMobID
 
@@ -134,14 +139,16 @@ public final class MobHandler {
         if (!mob.getTemplate().isPickUpDrop() && !mob.getTemplate().isFirstAttack()) {
             log.error("Received invalid MobApplyCtrl request for mob template ID : {}", mob.getTemplateId());
         }
-        // Assign controller
-        if (mob.getController() == null) {
-            field.getUserPool().setController(mob, user);
-        } else if (mob.getController() != user) {
-            final double userDistance = Util.distance(mob.getX(), mob.getY(), user.getX(), user.getY());
-            final double controllerDistance = Util.distance(mob.getX(), mob.getY(), mob.getController().getX(), mob.getController().getY());
-            if (userDistance < controllerDistance - 20) {
+        // Assign controller (no controller assignment under server-authoritative mode)
+        if (!ServerConfig.SERVER_AUTHORITATIVE_MOBS) {
+            if (mob.getController() == null) {
                 field.getUserPool().setController(mob, user);
+            } else if (mob.getController() != user) {
+                final double userDistance = Util.distance(mob.getX(), mob.getY(), user.getX(), user.getY());
+                final double controllerDistance = Util.distance(mob.getX(), mob.getY(), mob.getController().getX(), mob.getController().getY());
+                if (userDistance < controllerDistance - 20) {
+                    field.getUserPool().setController(mob, user);
+                }
             }
         }
     }

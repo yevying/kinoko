@@ -101,7 +101,7 @@ public final class UserPool extends FieldObjectPool<User> {
         // Create field objects for user
         field.getMobPool().forEach((mob) -> {
             user.write(MobPacket.mobEnterField(mob));
-            if (mob.getController() == null) {
+            if (!ServerConfig.SERVER_AUTHORITATIVE_MOBS && mob.getController() == null) {
                 mob.setController(user);
                 user.write(MobPacket.mobChangeController(mob, true));
             } else {

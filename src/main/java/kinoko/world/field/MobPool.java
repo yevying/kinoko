@@ -5,6 +5,7 @@ import kinoko.packet.field.MobPacket;
 import kinoko.provider.map.LifeInfo;
 import kinoko.provider.map.LifeType;
 import kinoko.script.party.KerningPQ;
+import kinoko.server.ServerConfig;
 import kinoko.server.node.ServerExecutor;
 import kinoko.util.BitFlag;
 import kinoko.util.Rect;
@@ -42,7 +43,9 @@ public final class MobPool extends FieldObjectPool<Mob> {
         if (mob.getSummonType() != MobAppearType.SUSPENDED.getValue()) {
             mob.setSummonType(MobAppearType.NORMAL.getValue());
         }
-        field.getUserPool().assignController(mob);
+        if (!ServerConfig.SERVER_AUTHORITATIVE_MOBS) {
+            field.getUserPool().assignController(mob);
+        }
     }
 
     public synchronized boolean removeMob(Mob mob, MobLeaveType leaveType) {
@@ -72,6 +75,18 @@ public final class MobPool extends FieldObjectPool<Mob> {
 
     public void updateMobs(Instant now) {
         for (Mob mob : getObjects()) {
+            // Server-authoritative mob behavior: drive movement and broadcast the generated path
+            if (ServerConfig.SERVER_AUTHORITATIVE_MOBS) {
+                mob.getBehavior().update().ifPresent(movePath -> {
+                    final MobAttackInfo mai = new MobAttackInfo();
+                    mai.actionMask = 0;
+                    mai.actionAndDir = (byte) 0xFF;
+                    mai.targetInfo = 0;
+                    mai.multiTargetForBall = List.of();
+                    mai.randTimeForAreaAttack = List.of();
+                    field.broadcastPacket(MobPacket.mobMove(mob, mai, movePath));
+                });
+            }
             // Handle burn
             final Set<BurnedInfo> resetBurnedInfos = new HashSet<>();
             final var iter = mob.getMobStat().getBurnedInfos().values().iterator();
