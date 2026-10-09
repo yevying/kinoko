@@ -8,6 +8,7 @@ import kinoko.world.field.life.MoveElem;
 import kinoko.world.field.life.MovePath;
 import kinoko.world.user.User;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,12 @@ import java.util.Optional;
 public final class MobBehavior {
     // v95 行为 tick（与客户端 nCount 口径一致）
     private static final int TICK_MS = 100;
+    // 广播批大小：累积 BATCH_TICKS 个 tick（300ms）的元素后统一广播一次。
+    // 单 tick（100ms）广播时，客户端 Hermite 只在 100ms 内插值到终点，任何网络 jitter /
+    // 帧率波动都会让新包到达时旧插值未播完，客户端 Clear 重置产生坐标回拉（飘移）。
+    // 批量广播：客户端一次播完整批 3 个元素（300ms），包到达间隔拉长、批次内 Hermite
+    // 多元素连续衔接（前元素终点速度=后元素起点速度），消除 tick 边界速度突变与回拉。
+    private static final int BATCH_TICKS = 3;
     // 物理常量（matching reference: PhysicsConstants — gravityAcc=2000, fallSpeed=670）
     private static final float GRAVITY = 2000f;
     private static final float FALL_MAX_SPEED = 670f;
@@ -89,6 +96,22 @@ public final class MobBehavior {
     // 上一条广播的 moveAction 字节（含 dir bit，用于去重：姿态/朝向未变且未移动时不发包）
     private byte lastSentMoveAction = -1;
 
+    // === 批量广播累积状态（方案B） ===
+    // 当前批次起点（首个元素加入时的 tick 开始前位置），批次 flush 时作为 MovePath 头
+    private int batchStartX;
+    private int batchStartY;
+    // 当前批次已累积元素
+    private final List<MoveElem> batchElems = new ArrayList<>();
+    // 当前批次已累积 tick 数
+    private int batchTickCount;
+    // 当前批次是否包含实际位移（flush 时作为"是否有新信息"的一半判断）
+    private boolean batchMoved;
+    // 批次首元素速度（作为广播 MovePath 头速度，客户端首元素 Hermite 的 m0）
+    private short batchHeadVx;
+    private short batchHeadVy;
+    // 当前批次累积元素所属的动作类型（决定姿态切换时是否立即 flush；-1 = 无活跃批次）
+    private int batchAction = -1;
+
     public MobBehavior(Mob mob) {
         this.mob = mob;
         // field 不在此捕获：Mob 构造时 field 尚未赋给 addMob，留待 ensureInit 惰性解析
@@ -102,7 +125,9 @@ public final class MobBehavior {
     }
 
     /**
-     * 字段 tick 调用一次。返回待广播的移动路径，无新信息（未移动且姿态/朝向未变）时返回 empty。
+     * 字段 tick 调用一次。每 tick 推进并把移动元素累积到当前批次，累积满 BATCH_TICKS 个
+     * tick（300ms）或动作类型（move/stand/chase/fall/fly）发生变化时统一重组成一条
+     * MovePath 广播返回；批次内无新信息（未移动且姿态/朝向未变）时返回 empty。
      */
     public Optional<MovePath> update() {
         ensureInit();
@@ -130,14 +155,28 @@ public final class MobBehavior {
             walkStep();
         }
 
-        final byte moveAction = moveActionByte(mob.isLeft() ? 1 : 0);
-        final boolean moved = mob.getX() != x0 || mob.getY() != y0;
-        // 移动了，或姿态/朝向相对上一条广播发生了变化（如行走→站立、边缘掉头）才发包
-        if (moved || moveAction != lastSentMoveAction) {
-            lastSentMoveAction = moveAction;
-            return Optional.of(buildPath(x0, y0, moved));
+        // === 批量累积（方案B） ===
+        // 本 tick 的首个元素：记录批次起点 = tick 开始前位置（作为广播 MovePath 头）
+        Optional<MovePath> toBroadcast = Optional.empty();
+        if (batchElems.isEmpty()) {
+            batchStartX = x0;
+            batchStartY = y0;
+        } else if (action != batchAction) {
+            // 动作类型发生变化（move→stand、掉头、入坠、落地）→ 立即 flush 已累积元素，
+            // 姿态切换不拖延到批次满；flush 后重置批次起点，再把本 tick 元素加入新批次。
+            toBroadcast = flushBatch();
+            batchStartX = x0;
+            batchStartY = y0;
         }
-        return Optional.empty();
+
+        appendElement(x0, y0);
+        batchAction = action;
+
+        // 累积满 BATCH_TICKS 个 tick → 重组广播（动作切换已广播过则本帧不再重复广播）
+        if (batchTickCount >= BATCH_TICKS && toBroadcast.isEmpty()) {
+            toBroadcast = flushBatch();
+        }
+        return toBroadcast;
     }
 
     /** 重置状态（重生 / 换图时调用）。 */
@@ -150,6 +189,14 @@ public final class MobBehavior {
         falling = false;
         vspeed = 0;
         lastSentMoveAction = -1;
+        batchStartX = 0;
+        batchStartY = 0;
+        batchElems.clear();
+        batchTickCount = 0;
+        batchMoved = false;
+        batchHeadVx = 0;
+        batchHeadVy = 0;
+        batchAction = -1;
     }
 
     public boolean isFalling() {
@@ -394,15 +441,16 @@ public final class MobBehavior {
 
     // PATH BUILDING ---------------------------------------------------------------------------------------------------
 
-    private MovePath buildPath(int x0, int y0, boolean moving) {
-        // dir bit 取当前真实朝向（客户端 SetMoveAction 按此翻转），不再由位移推断
-        final int dir = mob.isLeft() ? 1 : 0;
-        final byte moveAction = moveActionByte(dir);
-        // 速度取本段实际位移/dt（带符号）：与客户端 Hermite 弦斜率一致，
-        // m0=m1=段平均速度时段内退化为线性插值，消除每 tick 边界的"停→加速"脉动。
+    /**
+     * 把本 tick 的移动追加为一个 MovePath 元素（NORMAL，含速度/朝向）。
+     * 速度取本 tick 实际位移/dt（带符号）：与客户端 Hermite 弦斜率一致，
+     * 批次内相邻元素 m1/m0 相等 → Hermite 在元素间自然衔接，消除 tick 边界"停→加速"脉动。
+     */
+    private void appendElement(int x0, int y0) {
         final float dtSec = TICK_MS / 1000f;
-        final short hspeed = (short) (moving ? Math.round((mob.getX() - x0) / dtSec) : 0);
-        final short vspeed0 = (short) (moving ? Math.round((mob.getY() - y0) / dtSec) : 0);
+        final short hspeed = (short) Math.round((mob.getX() - x0) / dtSec);
+        final short vspeed0 = (short) Math.round((mob.getY() - y0) / dtSec);
+        final byte moveAction = moveActionByte(mob.isLeft() ? 1 : 0);
 
         final MoveElem elem = new MoveElem((byte) 0); // NORMAL
         elem.setX((short) mob.getX());
@@ -415,14 +463,49 @@ public final class MobBehavior {
         elem.setMoveAction(moveAction);
         elem.setElapse((short) TICK_MS);
 
-        // 路径头速度 = 段平均速度（客户端作为首元素 Hermite 的 m0）
-        return new MovePath(
-                (short) x0,
-                (short) y0,
-                hspeed,
-                vspeed0,
-                List.of(elem)
-        );
+        if (batchElems.isEmpty()) {
+            batchHeadVx = hspeed;
+            batchHeadVy = vspeed0;
+        }
+        batchElems.add(elem);
+        batchTickCount++;
+        batchMoved |= (hspeed != 0 || vspeed0 != 0);
+    }
+
+    /**
+     * 重组当前批次为一条 MovePath 广播并清空累积状态。
+     * 路径头 = 批次起点（tick 开始前位置）+ 首元素速度；批次内多元素（300ms）由客户端
+     * 一次 Hermite 播完，消除单 tick 广播因网络 jitter 导致的插值重置回拉（飘移）。
+     * 无新信息（未移动且姿态/朝向与上一广播相同）时返回 empty 且不更新 lastSentMoveAction。
+     */
+    private Optional<MovePath> flushBatch() {
+        if (batchElems.isEmpty()) {
+            return Optional.empty();
+        }
+        // 批次尾元素真实 MoveAction 字节（动作变化触发 flush 时，当前 action 已切到新姿态，
+        // 若用 moveActionByte 会编错批次内元素的姿态）；去重用 batchMoved + 尾元素动作是否变化。
+        final int lastAction = batchAction;
+        final boolean hasChange = batchMoved || moveActionByte(mob.isLeft() ? 1 : 0) != lastSentMoveAction
+                || lastAction != action;
+        // 重置累积状态（无论是否广播都要重置，避免下一个批次从残留状态起步）
+        final List<MoveElem> batch = new ArrayList<>(batchElems);
+        batchElems.clear();
+        batchTickCount = 0;
+        batchMoved = false;
+        batchAction = -1;
+        if (!hasChange) {
+            return Optional.empty();
+        }
+        // lastSentMoveAction 更新为批次尾元素真实动作
+        final MoveElem tail = batch.get(batch.size() - 1);
+        final byte tailMoveAction = tail.getMoveAction();
+        lastSentMoveAction = tailMoveAction;
+        return Optional.of(new MovePath(
+                (short) batchStartX,
+                (short) batchStartY,
+                batchHeadVx,
+                batchHeadVy,
+                batch));
     }
 
     private byte moveActionByte(int dir) {
