@@ -92,12 +92,16 @@ public final class User extends Life {
     private boolean originalITCClient;
     private Instant nextCheckItemExpire;
     private Instant nextIdleRecovery;
+    // 受击无敌：被怪物 attack/技能命中后短时间内不再受怪物伤害
+    // (matching reference: 095 CUserLocal 受击后约 2 秒无敌闪烁)
+    private Instant lastMobHitTime;
 
     public User(Client client, CharacterData characterData) {
         this.client = client;
         this.characterData = characterData;
         this.nextCheckItemExpire = Instant.MIN;
         this.nextIdleRecovery = Instant.MIN;
+        this.lastMobHitTime = Instant.MIN;
     }
 
     public Client getClient() {
@@ -398,6 +402,14 @@ public final class User extends Life {
 
     public void setNextIdleRecovery(Instant nextIdleRecovery) {
         this.nextIdleRecovery = nextIdleRecovery;
+    }
+
+    public Instant getLastMobHitTime() {
+        return lastMobHitTime;
+    }
+
+    public void setLastMobHitTime(Instant lastMobHitTime) {
+        this.lastMobHitTime = lastMobHitTime;
     }
 
     // STAT METHODS ----------------------------------------------------------------------------------------------------

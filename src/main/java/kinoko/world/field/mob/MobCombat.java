@@ -33,6 +33,15 @@ public final class MobCombat {
     public static void applyMobHit(Mob mob, User target, MobAttack attack, int attackIndex) {
         final Field field = mob.getField();
 
+        // 受击无敌：命中后 2 秒内不再受怪物伤害
+        // (matching reference: 095 CUserLocal::SetDamaged — 受击后约 2 秒无敌闪烁，
+        //  期间怪物攻击不再造成伤害；单机客户端在 CharacterStateMachine.ApplyMobDamage 同口径)
+        final Instant now = Instant.now();
+        if (now.isBefore(target.getLastMobHitTime().plus(2, ChronoUnit.SECONDS))) {
+            return; // 无敌期内：不结算伤害，也不广播受击表现
+        }
+        target.setLastMobHitTime(now);
+
         final HitInfo hitInfo = new HitInfo();
         hitInfo.attackIndex = attackIndex;
         hitInfo.templateId = mob.getTemplateId();

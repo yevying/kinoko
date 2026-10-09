@@ -35,7 +35,10 @@ import java.util.Optional;
  *       行走的怪物永远不会走出平台坠落。</li>
  *   <li>坠落：重力 2000 px/s²，垂直速度上限 670 px/s，getFootholdBelow 检测落地。
  *       仅作为 foothold 引用失效时的恢复路径；越过地图底界则回到出生点兜底。</li>
- *   <li>飞行（moveAbility=4）：自由 2D 移动，追击目标或绕出生点盘旋，地图边界夹紧。</li>
+ *   <li>飞行（moveAbility=4）：自由 2D 移动，matching reference: 095 CVecCtrlMob::CtrlUpdateActiveFly —
+ *       tick 重选航向（追击朝目标 ±15°；无目标时超出巡游半径飞回 home、半径内 1/3 概率切向环绕
+ *       盘旋、其余全 360° 随机航向），航向以最大角速度平滑偏转（banking 弧线），叠加正弦垂直浮动
+ *       （翅膀扇动起伏），地图边界反弹（航向反转），飞行怪不回落 stand。</li>
  * </ul>
  *
  * <p>moveAction 字节（客户端 ResolveMoveActionType：actionType = moveAction>>1）：</p>
@@ -61,7 +64,13 @@ public final class MobBehavior {
     // 物理常量（matching reference: PhysicsConstants — gravityAcc=2000, fallSpeed=670）
     private static final float GRAVITY = 2000f;
     private static final float FALL_MAX_SPEED = 670f;
-    private static final int FLY_HOVER_RADIUS = 150;
+    // 飞行巡游半径（matching reference: 客户端 MobNode.FlyHoverRadius = 320）
+    private static final int FLY_HOVER_RADIUS = 320;
+    // 航向最大角速度（rad/s，matching reference: 客户端 FlyTurnRate = 2.6）
+    private static final float FLY_TURN_RATE = 2.6f;
+    // 垂直浮动振幅/频率（matching reference: 客户端 FlyBobAmp = 30, FlyBobFreq = 3.5）
+    private static final float FLY_BOB_AMP = 30f;
+    private static final float FLY_BOB_FREQ = 3.5f;
     // v95 CollisionDetectWalk 边缘停止内缩量（px）：怪物停在距平台端点 20px 处
     private static final int EDGE_INSET = 20;
     // 仇恨放弃区（matching reference: rcAreaGiveUp = {-1000, -600, 1000, 600}）
@@ -89,6 +98,11 @@ public final class MobBehavior {
     private int inputX;
     private int action;
     private int hateId;
+
+    // 飞行状态（matching reference: 客户端 _flyAngle / _flyTargetAngle / _flyBobTime）
+    private float flyAngle;
+    private float flyTargetAngle;
+    private float flyBobTime;
 
     // === 服务端权威攻击/技能状态 ===
     // 下一次可出手的时间戳（ms）；pendingAttack = 已出手、等待 attackAfter 延迟后结算的攻击
@@ -225,6 +239,9 @@ public final class MobBehavior {
         chaseGiveUpAfterMs = 0;
         falling = false;
         vspeed = 0;
+        flyAngle = 0;
+        flyTargetAngle = 0;
+        flyBobTime = 0;
         nextAttackTimeMs = 0;
         pendingAttack = null;
         lastSentMoveAction = -1;
@@ -247,6 +264,12 @@ public final class MobBehavior {
 
     private void decide() {
         final int target = resolveHate();
+        if (mob.getTemplate().isFlying()) {
+            // 飞行怪恒保持 fly 姿态，航向决策复刻 095 CtrlUpdateActiveFly
+            action = ACT_FLY;
+            decideFlyDirection(target);
+            return;
+        }
         if (target != 0 && hateId != 0) {
             // 追击目标
             final Optional<User> userResult = field.getUserPool().getById(hateId);
@@ -254,14 +277,53 @@ public final class MobBehavior {
                 inputX = userResult.get().getX() >= mob.getX() ? 1 : -1;
             }
             moveTick = (Util.getRandom(0, 399) + 800) / 90; // 8~13 tick
-            action = mob.getTemplate().isFlying() ? ACT_FLY : ACT_CHASE;
+            action = ACT_CHASE;
             return;
         }
-        // 无目标：随机站立 / 行走 / 悬停
+        // 无目标：随机站立 / 行走
         inputX = Util.getRandom(0, 2) - 1; // -1, 0, 1
         moveTick = (Util.getRandom(0, 1999) + 1000) / 90; // 11~33 tick
-        action = inputX == 0 ? ACT_STAND
-                : mob.getTemplate().isFlying() ? ACT_FLY : ACT_MOVE;
+        action = inputX == 0 ? ACT_STAND : ACT_MOVE;
+    }
+
+    /**
+     * 飞行航向决策（matching reference: 客户端 MobAi.RecomputeFlyDirection / 095 CtrlUpdateActiveFly）：
+     *   - 有仇恨目标 → 朝目标 + ±15° 抖动，追击 8~13 tick；
+     *   - 无目标且超出巡游半径 → 朝 home 飞回 + ±12° 抖动，8~13 tick；
+     *   - 半径内且距 home > 60px → 1/3 概率切向环绕（航向垂直 home→mob 连线）盘旋；
+     *   - 其余 → 全 360° 随机航向巡游，5~16 tick。
+     * 实际航向在 flyStep 中以最大角速度平滑偏转到目标角，轨迹呈弧线而非折线。
+     */
+    private void decideFlyDirection(final int target) {
+        if (target != 0 && hateId != 0) {
+            final Optional<User> userResult = field.getUserPool().getById(hateId);
+            if (userResult.isPresent()) {
+                final User user = userResult.get();
+                flyTargetAngle = (float) Math.atan2(user.getY() - mob.getY(), user.getX() - mob.getX())
+                        + (float) Math.toRadians(Util.getRandom(-15, 15));
+                moveTick = (Util.getRandom(0, 399) + 800) / 90; // 8~13 tick
+                return;
+            }
+        }
+        final float dx = mob.getX() - mob.getSpawnX();
+        final float dy = mob.getY() - mob.getSpawnY();
+        final float distSq = dx * dx + dy * dy;
+        if (distSq > FLY_HOVER_RADIUS * FLY_HOVER_RADIUS) {
+            // 超出巡游半径：飞回 home，防止长期漂移离图
+            flyTargetAngle = (float) Math.atan2(-dy, -dx)
+                    + (float) Math.toRadians(Util.getRandom(-12, 12));
+            moveTick = (Util.getRandom(0, 399) + 800) / 90;
+        } else if (Util.getRandom(0, 2) == 0 && distSq > 60f * 60f) {
+            // 切向环绕：航向垂直 home→mob 连线，形成盘旋弧线
+            final float sign = Util.getRandom(0, 1) == 0 ? 1f : -1f;
+            flyTargetAngle = (float) Math.atan2(dy, dx) + (float) (Math.PI / 2 * sign)
+                    + (float) Math.toRadians(Util.getRandom(-10, 10));
+            moveTick = (Util.getRandom(0, 399) + 800) / 90;
+        } else {
+            // 全 360° 随机航向巡游（含垂直分量，不再局限于水平摆动）
+            flyTargetAngle = (float) Math.toRadians(Util.getRandom(0, 360));
+            moveTick = (Util.getRandom(0, 999) + 500) / 90; // 5~16 tick
+        }
     }
 
     private int resolveHate() {
@@ -398,49 +460,45 @@ public final class MobBehavior {
         action = ACT_FALL;
     }
 
-    /** 飞行：自由 2D 移动，追击目标或绕出生点盘旋。 */
+    /**
+     * 飞行推进（matching reference: 客户端 MobAi.RunFlyFrame / 095 CtrlUpdateActiveFly）：
+     * 航向以最大角速度向目标角偏转（banking 弧线），速度 = 航向 × flySpeed 叠加正弦垂直浮动
+     * （翅膀扇动起伏），边界处航向反弹（对应客户端 FlipFlyAngle）。
+     */
     private void flyStep() {
         final float dt = TICK_MS / 1000f;
-        float angle;
-        if (hateId != 0) {
-            final Optional<User> userResult = field.getUserPool().getById(hateId);
-            if (userResult.isPresent()) {
-                final User user = userResult.get();
-                angle = (float) Math.atan2(user.getY() - mob.getY(), user.getX() - mob.getX())
-                        + (float) Math.toRadians(Util.getRandom(-15, 15));
-                action = ACT_FLY;
-            } else {
-                angle = hoverAngle();
-                action = ACT_FLY;
-            }
-        } else {
-            angle = hoverAngle();
-            action = ACT_FLY;
-        }
-        final float vx = (float) Math.cos(angle) * flySpeedPx;
-        final float vy = (float) Math.sin(angle) * flySpeedPx;
+        // 平滑转向：每 tick 最多偏转 FLY_TURN_RATE * dt，轨迹呈弧线而非折线
+        final float delta = angleDelta(flyAngle, flyTargetAngle);
+        flyAngle += Math.max(-FLY_TURN_RATE * dt, Math.min(FLY_TURN_RATE * dt, delta));
+
+        // 垂直浮动：正弦 bob 叠加到 vy，水平飞行时也会上下起伏
+        flyBobTime += dt * FLY_BOB_FREQ;
+        final float bob = (float) Math.sin(flyBobTime) * FLY_BOB_AMP;
+
+        final float vx = (float) Math.cos(flyAngle) * flySpeedPx;
+        final float vy = (float) Math.sin(flyAngle) * flySpeedPx + bob;
         mob.setLeft(vx < 0);
         float newX = mob.getX() + vx * dt;
         float newY = mob.getY() + vy * dt;
-        newX = clampX(newX);
-        newY = clampY(newY);
-        mob.setX((int) newX);
-        mob.setY((int) newY);
+        ensureBorder();
+        final float clampedX = clampX(newX);
+        final float clampedY = clampY(newY);
+        if (clampedX != newX || clampedY != newY) {
+            // 边界反弹：反转当前航向与目标航向，下一 tick 向内飞（matching reference: FlipFlyAngle）
+            flyAngle += (float) Math.PI;
+            flyTargetAngle += (float) Math.PI;
+        }
+        mob.setX((int) clampedX);
+        mob.setY((int) clampedY);
+        action = ACT_FLY;
     }
 
-    private float hoverAngle() {
-        final float homeX = mob.getSpawnX();
-        final float homeY = mob.getSpawnY();
-        final float dx = homeX - mob.getX();
-        final float dy = homeY - mob.getY();
-        final float distSq = dx * dx + dy * dy;
-        if (distSq > FLY_HOVER_RADIUS * FLY_HOVER_RADIUS) {
-            // 远离出生点：飞回 home + 抖动
-            return (float) Math.atan2(dy, dx) + (float) Math.toRadians(Util.getRandom(-12, 12));
-        }
-        // 接近 home：随机小角度漂移
-        final float sign = Util.getRandom(0, 1) == 0 ? -1f : 1f;
-        return (float) Math.toRadians(Util.getRandom(-35, 35)) * sign;
+    /** 最短路径角差：把 (target - current) 归一化到 (-π, π]。 */
+    private static float angleDelta(float current, float target) {
+        float diff = target - current;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        return diff;
     }
 
     private void startFall(float edgeX) {
@@ -689,9 +747,10 @@ public final class MobBehavior {
         // （matching reference: 客户端 MobDataLoader — WalkSpeed = (rawSpeed+100)/100*125）。
         final int speed = mob.getTemplate().getSpeed();
         this.walkSpeedPx = Math.clamp(speed + 100, 10, 140) / 100f * 125f;
-        // 飞行怪（moveAbility=4）v95 同样按 speed 统计量计算；WZ flySpeed 存在时优先，口径一致。
+        // 飞行速度口径与客户端一致（matching reference: MobAi.GetFlySpeedPx — FlySpeed(0..140)/100*125，
+        // FlySpeed=0（仅 fly 节点置 MoveAbility=4）时兜底 110 px/s）。
         final int flySpeed = mob.getTemplate().getFlySpeed();
-        this.flySpeedPx = flySpeed > 0 ? Math.clamp(flySpeed + 100, 10, 140) / 100f * 125f : this.walkSpeedPx;
+        this.flySpeedPx = flySpeed > 0 ? flySpeed / 100f * 125f : 110f;
     }
 
     /** 确保 border 非空后再使用（防御：任何状态异常都不会让 clampX/clampY 空指针）。 */
