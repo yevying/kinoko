@@ -6,6 +6,8 @@ import kinoko.provider.skill.ElementAttribute;
 import kinoko.provider.wz.serialize.WzCanvas;
 import kinoko.provider.wz.serialize.WzProperty;
 import kinoko.provider.wz.serialize.WzUol;
+import kinoko.provider.wz.serialize.WzVector;
+import kinoko.util.Rect;
 import kinoko.util.Util;
 
 import java.util.*;
@@ -44,13 +46,14 @@ public final class MobTemplate {
     private final int speed;
     private final int moveAbility;
     private final int flySpeed;
+    private final boolean hasFlySpeed;
 
-    public MobTemplate(int id, int level, int exp, int maxHp, int maxMp, int pad, int pdr, int mad, int mdr, int acc, int eva, int hpRecovery, int mpRecovery, int fixedDamage, int removeAfter, int dropItemPeriod, int hpTagColor, int hpTagBgColor, boolean boss, boolean noFlip, boolean pickUpDrop, boolean firstAttack, boolean damagedByMob, boolean onlyNormalAttack, Map<Integer, MobAttack> attacks, Map<Integer, MobSkill> skills, Map<ElementAttribute, DamagedAttribute> damagedElemAttr, Set<Integer> damagedBySkill, List<Integer> revives, int reviveDelay, int speed, int moveAbility, int flySpeed) {
+    public MobTemplate(int id, int level, int exp, int maxHp, int maxMP, int pad, int pdr, int mad, int mdr, int acc, int eva, int hpRecovery, int mpRecovery, int fixedDamage, int removeAfter, int dropItemPeriod, int hpTagColor, int hpTagBgColor, boolean boss, boolean noFlip, boolean pickUpDrop, boolean firstAttack, boolean damagedByMob, boolean onlyNormalAttack, Map<Integer, MobAttack> attacks, Map<Integer, MobSkill> skills, Map<ElementAttribute, DamagedAttribute> damagedElemAttr, Set<Integer> damagedBySkill, List<Integer> revives, int reviveDelay, int speed, int moveAbility, int flySpeed, boolean hasFlySpeed) {
         this.id = id;
         this.level = level;
         this.exp = exp;
         this.maxHp = maxHp;
-        this.maxMp = maxMp;
+        this.maxMp = maxMP;
         this.pad = pad;
         this.pdr = pdr;
         this.mad = mad;
@@ -79,6 +82,7 @@ public final class MobTemplate {
         this.speed = speed;
         this.moveAbility = moveAbility;
         this.flySpeed = flySpeed;
+        this.hasFlySpeed = hasFlySpeed;
     }
 
     public int getId() {
@@ -233,7 +237,9 @@ public final class MobTemplate {
     }
 
     public boolean isFlying() {
-        return moveAbility == 4;
+        // v95 飞行怪用 info/flySpeed 属性标记（如 9400560/9400200），多数不带 moveAbility；
+        // 双口径兼容：moveAbility==4 或 flySpeed 存在都视为飞行。
+        return moveAbility == 4 || hasFlySpeed;
     }
 
     @Override
@@ -307,6 +313,7 @@ public final class MobTemplate {
         int speed = 0;
         int moveAbility = 0;
         int flySpeed = 0;
+        boolean hasFlySpeed = false;
         // Process attacks
         for (var entry : mobProp.getItems().entrySet()) {
             if (entry.getKey().startsWith("attack")) {
@@ -321,6 +328,10 @@ public final class MobTemplate {
                 int mpBurn = 0;
                 boolean magic = false;
                 boolean deadlyAttack = false;
+                Rect range = Rect.of(-60, -50, 60, 50); // 兜底命中框（matching reference: 客户端 MobDataLoader 回退 -30,-50,60,50）
+                int type = 0;
+                int attackAfter = 0;
+                int elemAttr = 0;
                 for (var attackInfoEntry : attackInfoProp.getItems().entrySet()) {
                     switch (attackInfoEntry.getKey()) {
                         case "disease" -> {
@@ -341,10 +352,49 @@ public final class MobTemplate {
                         case "deadlyAttack" -> {
                             deadlyAttack = WzProvider.getInteger(attackInfoEntry.getValue()) != 0;
                         }
+                        case "range" -> {
+                            if (attackInfoEntry.getValue() instanceof WzProperty rangeProp
+                                    && rangeProp.get("lt") instanceof WzVector && rangeProp.get("rb") instanceof WzVector) {
+                                range = WzProvider.getRect(rangeProp);
+                            }
+                        }
+                        case "type" -> {
+                            type = WzProvider.getInteger(attackInfoEntry.getValue());
+                        }
+                        case "attackAfter" -> {
+                            attackAfter = WzProvider.getInteger(attackInfoEntry.getValue());
+                        }
+                        case "elemAttr" -> {
+                            final String elem = WzProvider.getString(attackInfoEntry.getValue());
+                            for (int i = 0; i < elem.length(); i++) {
+                                final char c = Character.toUpperCase(elem.charAt(i));
+                                switch (c) {
+                                    case 'F' -> elemAttr |= 0x01;
+                                    case 'I' -> elemAttr |= 0x02;
+                                    case 'L' -> elemAttr |= 0x04;
+                                    case 'P' -> elemAttr |= 0x08;
+                                    case 'S' -> elemAttr |= 0x10;
+                                    case 'D' -> elemAttr |= 0x20;
+                                    default -> {}
+                                }
+                            }
+                        }
                         default -> {
                             // System.err.printf("Unhandled mob attack info %s in mob %d%n", infoEntry.getKey(), mobId);
                         }
                     }
+                }
+                if (attackAfter <= 0) {
+                    // 无 attackAfter 时用攻击动画总帧延迟兜底，再夹到 [300, 1500]。
+                    // 部分怪物攻击动画帧含相对 UOL（如 9500180），getAnimationDelay 无法解析
+                    // 时抛 ProviderError —— 兜底 600ms，不能让启动崩溃。
+                    int animDelay = 0;
+                    try {
+                        animDelay = getAnimationDelay(mobId, (WzProperty) entry.getValue());
+                    } catch (ProviderError e) {
+                        animDelay = 0;
+                    }
+                    attackAfter = animDelay > 0 ? Math.clamp(animDelay, 300, 1500) : 600;
                 }
                 attacks.put(attackIndex, new MobAttack(
                         skillId,
@@ -352,7 +402,11 @@ public final class MobTemplate {
                         conMp,
                         mpBurn,
                         magic,
-                        deadlyAttack
+                        deadlyAttack,
+                        range,
+                        type,
+                        attackAfter,
+                        elemAttr
                 ));
             }
         }
@@ -436,6 +490,7 @@ public final class MobTemplate {
                 }
                 case "flySpeed" -> {
                     flySpeed = WzProvider.getInteger(infoEntry.getValue());
+                    hasFlySpeed = true;
                 }
                 case "skill" -> {
                     if (!(infoEntry.getValue() instanceof WzProperty skillEntries)) {
@@ -451,10 +506,12 @@ public final class MobTemplate {
                             throw new ProviderError("Failed to resolve mob skill : %d", skillId);
                         }
                         final int skillLevel = WzProvider.getInteger(skillProp.get("level"));
+                        final int action = WzProvider.getInteger(skillProp.get("action"), 1);
                         skills.put(skillId, new MobSkill(
                                 skillType,
                                 skillId,
-                                skillLevel
+                                skillLevel,
+                                action
                         ));
                     }
                 }
@@ -533,7 +590,8 @@ public final class MobTemplate {
                 reviveDelay,
                 speed,
                 moveAbility,
-                flySpeed
+                flySpeed,
+                hasFlySpeed
         );
     }
 

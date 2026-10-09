@@ -13,6 +13,7 @@ import kinoko.provider.mob.MobSkillType;
 import kinoko.provider.mob.MobTemplate;
 import kinoko.provider.skill.SkillInfo;
 import kinoko.provider.skill.SkillStat;
+import kinoko.server.ServerConfig;
 import kinoko.server.header.InHeader;
 import kinoko.server.header.OutHeader;
 import kinoko.server.packet.InPacket;
@@ -88,13 +89,18 @@ public final class HitHandler {
             return;
         }
 
+        // 服务端权威怪物攻击模式下，怪物→玩家伤害由 MobBehavior/MobCombat 服务端结算，
+        // 忽略控制器客户端上报的 mob 攻击（防止本地预测 + 服务端权威双重扣血）。
         if (hitInfo.attackIndex >= 0) {
+            if (ServerConfig.SERVER_AUTHORITATIVE_MOBS) {
+                return;
+            }
             handleMobAttack(user, hitInfo);
         }
         handleHit(user, hitInfo);
     }
 
-    private static void handleMobAttack(User user, HitInfo hitInfo) {
+    public static void handleMobAttack(User user, HitInfo hitInfo) {
         // Resolve mob attack and attack index
         final Optional<MobTemplate> mobTemplateResult = MobProvider.getMobTemplate(hitInfo.templateId);
         if (mobTemplateResult.isEmpty()) {
@@ -164,7 +170,7 @@ public final class HitHandler {
         user.setTemporaryStat(Map.of(cts, option), 0);
     }
 
-    private static void handleHit(User user, HitInfo hitInfo) {
+    public static void handleHit(User user, HitInfo hitInfo) {
         // Night mobs hit harder (daytime is a no-op). Applied before every damage reduction.
         // 移植差异：参考是"静默"（浮字不变）；kinoko 经下面的 UserRemote.hit 把缩放后的 finalDamage
         // 广播给远程观者，本人浮字仍由本地自算（self 被 exclude）—— 属移植必然差异。

@@ -1,5 +1,9 @@
 package kinoko.world.field.mob;
 
+import kinoko.packet.field.MobPacket;
+import kinoko.provider.mob.MobAttack;
+import kinoko.provider.mob.MobSkill;
+import kinoko.provider.mob.MobTemplate;
 import kinoko.provider.map.Foothold;
 import kinoko.util.Rect;
 import kinoko.util.Util;
@@ -86,6 +90,25 @@ public final class MobBehavior {
     private int action;
     private int hateId;
 
+    // === 服务端权威攻击/技能状态 ===
+    // 下一次可出手的时间戳（ms）；pendingAttack = 已出手、等待 attackAfter 延迟后结算的攻击
+    private long nextAttackTimeMs;
+    private PendingAttack pendingAttack;
+
+    private static final class PendingAttack {
+        final int attackIndex;
+        final MobAttack attack;
+        final int targetId;
+        final long hitTimeMs;
+
+        PendingAttack(int attackIndex, MobAttack attack, int targetId, long hitTimeMs) {
+            this.attackIndex = attackIndex;
+            this.attack = attack;
+            this.targetId = targetId;
+            this.hitTimeMs = hitTimeMs;
+        }
+    }
+
     // v95 DelayedGiveUpChasing：追击怪物撞边缘后，仇恨最晚在該时刻放弃（ms 时间戳；0 = 无）
     private long chaseGiveUpAfterMs;
 
@@ -133,26 +156,40 @@ public final class MobBehavior {
         ensureInit();
         final int x0 = mob.getX();
         final int y0 = mob.getY();
+        final long now = System.currentTimeMillis();
+
+        // 已出手的攻击：attackAfter 延迟到期后服务端结算伤害（目标死亡/离开 range 则 miss）
+        if (pendingAttack != null && now >= pendingAttack.hitTimeMs) {
+            resolvePendingAttack();
+        }
 
         // v95 逐帧检查追击计时；这里每 tick（100ms）检查一次，避免放弃延迟到下一次 decide()
-        if (hateId != 0 && chaseGiveUpAfterMs != 0 && System.currentTimeMillis() >= chaseGiveUpAfterMs) {
+        if (hateId != 0 && chaseGiveUpAfterMs != 0 && now >= chaseGiveUpAfterMs) {
             hateId = 0;
             chaseGiveUpAfterMs = 0;
         }
 
-        // 方向决策（每 tick 递减，归零重选）
-        moveTick--;
-        if (moveTick <= 0) {
-            decide();
-        }
-
-        // 推进
-        if (mob.getTemplate().isFlying()) {
-            flyStep();
-        } else if (falling) {
-            fallStep();
+        if (pendingAttack != null) {
+            // 攻击动画期间原地站立（matching reference: v95 怪物出手后 attackAfter 内不移动）
+            action = ACT_STAND;
         } else {
-            walkStep();
+            // 方向决策（每 tick 递减，归零重选）
+            moveTick--;
+            if (moveTick <= 0) {
+                decide();
+            }
+
+            // 推进
+            if (mob.getTemplate().isFlying()) {
+                flyStep();
+            } else if (falling) {
+                fallStep();
+            } else {
+                walkStep();
+            }
+
+            // 攻击 / 技能决策（出手后本 tick 内 pendingAttack 置位，下一 tick 起原地站立）
+            tryCombat(now);
         }
 
         // === 批量累积（方案B） ===
@@ -188,6 +225,8 @@ public final class MobBehavior {
         chaseGiveUpAfterMs = 0;
         falling = false;
         vspeed = 0;
+        nextAttackTimeMs = 0;
+        pendingAttack = null;
         lastSentMoveAction = -1;
         batchStartX = 0;
         batchStartY = 0;
@@ -526,6 +565,107 @@ public final class MobBehavior {
                 return (byte) ((2 << 1) | dir); // stand
             }
         }
+    }
+
+    // COMBAT ----------------------------------------------------------------------------------------------------------
+
+    /**
+     * 攻击 / 技能决策（每 tick 调用一次，仅在无 pendingAttack 时）：
+     * 有仇恨目标、攻击冷却就绪、未被 Stun 时——先按低概率尝试技能（约每 5 秒一次机会，
+     * getNextSkill 已处理 Seal / cooltime / MP），否则遍历攻击表，目标落在任一 attack 的
+     * 相对命中框内则出手：广播攻击动作包（客户端播放 attack{n} 姿态与施法特效），
+     * 置 pendingAttack，attackAfter 毫秒后由 resolvePendingAttack 服务端结算伤害。
+     */
+    private void tryCombat(final long now) {
+        if (hateId == 0 || now < nextAttackTimeMs) {
+            return;
+        }
+        if (mob.getMobStat().hasOption(MobTemporaryStat.Stun)) {
+            return;
+        }
+        final Optional<User> targetResult = field.getUserPool().getById(hateId);
+        if (targetResult.isEmpty()) {
+            return;
+        }
+        final User target = targetResult.get();
+        final MobTemplate template = mob.getTemplate();
+
+        if (!template.isOnlyNormalAttack() && Util.getRandom(0, 9) == 0) {
+            final Optional<MobSkill> skillResult = mob.getNextSkill();
+            if (skillResult.isPresent()) {
+                final MobSkill skill = skillResult.get();
+                mob.setLeft(target.getX() < mob.getX());
+                final int dir = mob.isLeft() ? 1 : 0;
+                // skill action 22..38 = SKILL1..F：((21 + action) << 1) | dir
+                broadcastAction((byte) (((21 + skill.getAction()) << 1) | dir),
+                        skill.getSkillId() | (skill.getSkillLevel() << 8), 600, true);
+                MobCombat.applyMobSkill(mob, skill);
+                nextAttackTimeMs = now + 600;
+                return;
+            }
+        }
+
+        for (var entry : template.getAttacks().entrySet()) {
+            final MobAttack attack = entry.getValue();
+            if (mob.getRelativeRect(attack.getRange()).isInsideRect(target.getX(), target.getY())) {
+                mob.setLeft(target.getX() < mob.getX());
+                final int dir = mob.isLeft() ? 1 : 0;
+                // attack action 13..21 = ATTACK1..F：((13 + attackIndex) << 1) | dir
+                broadcastAction((byte) (((13 + entry.getKey()) << 1) | dir), 0, attack.getAttackAfter(), false);
+                if (attack.getConMp() > 0) {
+                    mob.setMp(Math.max(mob.getMp() - attack.getConMp(), 0));
+                }
+                pendingAttack = new PendingAttack(entry.getKey(), attack, target.getCharacterId(), now + attack.getAttackAfter());
+                nextAttackTimeMs = now + attack.getAttackAfter() + 400;
+                return;
+            }
+        }
+    }
+
+    /** 延迟到期后结算已出手的攻击：目标存活且仍在命中框内才扣血，否则 miss。 */
+    private void resolvePendingAttack() {
+        final PendingAttack p = pendingAttack;
+        pendingAttack = null;
+        final Optional<User> targetResult = field.getUserPool().getById(p.targetId);
+        if (targetResult.isEmpty()) {
+            return;
+        }
+        final User target = targetResult.get();
+        if (target.getHp() <= 0) {
+            return;
+        }
+        if (!mob.getRelativeRect(p.attack.getRange()).isInsideRect(target.getX(), target.getY())) {
+            return; // 目标已离开命中框 → miss，不结算
+        }
+        MobCombat.applyMobHit(mob, target, p.attack, p.attackIndex);
+    }
+
+    /**
+     * 广播攻击/技能动作包：actionMask=1 + actionAndDir + targetInfo，MovePath 为原地站立
+     * 单元素（elapse = attackAfter），客户端 SetActionAndDir 播放 attack{n}/skill 姿态与
+     * SpawnMobAttackCastFx 施法特效。
+     */
+    private void broadcastAction(byte actionAndDir, int targetInfo, int elapse, boolean isSkill) {
+        final MobAttackInfo mai = new MobAttackInfo();
+        mai.actionMask = 1;
+        mai.actionAndDir = actionAndDir;
+        mai.targetInfo = targetInfo;
+        mai.multiTargetForBall = new ArrayList<>();
+        mai.randTimeForAreaAttack = new ArrayList<>();
+        mai.isAttack = !isSkill;
+        mai.isSkill = isSkill;
+
+        final int dir = mob.isLeft() ? 1 : 0;
+        final MoveElem elem = new MoveElem((byte) 0); // NORMAL
+        elem.setX((short) mob.getX());
+        elem.setY((short) mob.getY());
+        elem.setVx((short) 0);
+        elem.setVy((short) 0);
+        elem.setFh((short) mob.getFoothold());
+        elem.setMoveAction((byte) ((2 << 1) | dir)); // stand
+        elem.setElapse((short) Math.clamp(elapse, 100, 32767));
+        final MovePath path = new MovePath((short) mob.getX(), (short) mob.getY(), (short) 0, (short) 0, List.of(elem));
+        field.broadcastPacket(MobPacket.mobMove(mob, mai, path));
     }
 
     // INIT -----------------------------------------------------------------------------------------------------------

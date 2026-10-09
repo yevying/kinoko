@@ -312,7 +312,7 @@ public final class MobHandler {
         }
     }
 
-    private static boolean applyMobSkill(Mob mob, MobSkill mobSkill, SkillInfo si, int delay) {
+    public static boolean applyMobSkill(Mob mob, MobSkill mobSkill, SkillInfo si, int delay) {
         final Field field = mob.getField();
         final MobSkillType skillType = mobSkill.getSkillType();
         final int skillId = mobSkill.getSkillId();

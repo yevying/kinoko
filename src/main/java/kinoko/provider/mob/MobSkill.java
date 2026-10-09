@@ -6,11 +6,18 @@ public final class MobSkill {
     private final MobSkillType skillType;
     private final int skillId;
     private final int skillLevel;
+    // info/skill 条目的 action 字段：技能动画索引（1..15 → skill1..skill15）
+    private final int action;
 
-    public MobSkill(MobSkillType skillType, int skillId, int skillLevel) {
+    public MobSkill(MobSkillType skillType, int skillId, int skillLevel, int action) {
         this.skillType = skillType;
         this.skillId = skillId;
         this.skillLevel = skillLevel;
+        this.action = action;
+    }
+
+    public int getAction() {
+        return action;
     }
 
     public MobSkillType getSkillType() {
