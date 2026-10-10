@@ -395,6 +395,12 @@ public final class Mob extends Life implements ControlledObject, Encodable {
         damageDone.put(attackerId, damageDone.getOrDefault(attackerId, 0) + actualDamage);
         updateHp(getHp() - actualDamage);
         getBehavior().setHate(attackerId);
+        // 广播毒伤数字（matching 095 CMob::ShowDamage 毒跳）：updateHp 只向攻击者发
+        // mobHpIndicator（血条百分比），不含伤害数字。客户端 RunBurnedTicks 在联机模式
+        // 下早退（避免重复扣血），毒伤数字唯一来源就是本广播，缺失则中毒跳数完全不显示。
+        if (actualDamage > 0) {
+            getField().broadcastPacket(MobPacket.mobDamaged(this, actualDamage));
+        }
     }
 
     public void damage(User attacker, int totalDamage, int delay) {

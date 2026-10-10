@@ -6,6 +6,7 @@ import kinoko.provider.mob.MobSkill;
 import kinoko.provider.mob.MobTemplate;
 import kinoko.provider.map.Foothold;
 import kinoko.util.Rect;
+import kinoko.util.Tuple;
 import kinoko.util.Util;
 import kinoko.world.field.Field;
 import kinoko.world.field.life.MoveElem;
@@ -36,8 +37,8 @@ import java.util.Optional;
  *   <li>坠落：重力 2000 px/s²，垂直速度上限 670 px/s，getFootholdBelow 检测落地。
  *       仅作为 foothold 引用失效时的恢复路径；越过地图底界则回到出生点兜底。</li>
  *   <li>飞行（moveAbility=4）：自由 2D 移动，matching reference: 095 CVecCtrlMob::CtrlUpdateActiveFly —
- *       tick 重选航向（追击朝目标 ±15°；无目标时超出巡游半径飞回 home、半径内 1/3 概率切向环绕
- *       盘旋、其余全 360° 随机航向），航向以最大角速度平滑偏转（banking 弧线），叠加正弦垂直浮动
+ *       tick 重选航向（追击朝目标 ±15°；无目标时全地图随机飞行：在地图边界内随机选目的地直线
+ *       飞向，到达/超时后重选），航向以最大角速度平滑偏转（banking 弧线），叠加正弦垂直浮动
  *       （翅膀扇动起伏），地图边界反弹（航向反转），飞行怪不回落 stand。</li>
  * </ul>
  *
@@ -64,8 +65,6 @@ public final class MobBehavior {
     // 物理常量（matching reference: PhysicsConstants — gravityAcc=2000, fallSpeed=670）
     private static final float GRAVITY = 2000f;
     private static final float FALL_MAX_SPEED = 670f;
-    // 飞行巡游半径（matching reference: 客户端 MobNode.FlyHoverRadius = 320）
-    private static final int FLY_HOVER_RADIUS = 320;
     // 航向最大角速度（rad/s，matching reference: 客户端 FlyTurnRate = 2.6）
     private static final float FLY_TURN_RATE = 2.6f;
     // 垂直浮动振幅/频率（matching reference: 客户端 FlyBobAmp = 30, FlyBobFreq = 3.5）
@@ -108,18 +107,38 @@ public final class MobBehavior {
     // 下一次可出手的时间戳（ms）；pendingAttack = 已出手、等待 attackAfter 延迟后结算的攻击
     private long nextAttackTimeMs;
     private PendingAttack pendingAttack;
+    // 技能动画冻结截止时间（ms）：技能无 hit 结算，仅按动画时长冻结移动（matching reference:
+    // 095 TryDoingSkill — 技能姿态期间 VecCtrl 不产生移动）
+    private long skillFreezeUntilMs;
+    // 冻结结束标记：解冻后的首个移动 tick 立即广播（不等 BATCH_TICKS 攒满），
+    // 让客户端行走动画在攻击/技能姿态结束后及时恢复，避免"站姿等待批次"的延迟
+    private boolean justUnfrozen;
+    // 出手前停步截止时间（ms，0 = 未停步）：v95 怪物攻击前先停步，停步一个批次时长后
+    // 攻击包出手（攻击包只含 stand，动画期间零位移）
+    private long attackStopUntilMs;
+    // 停步武装时锁定的出手选择（技能或攻击），停步期间不重掷概率
+    private CombatChoice queuedCombat;
 
     private static final class PendingAttack {
         final int attackIndex;
         final MobAttack attack;
         final int targetId;
         final long hitTimeMs;
+        // 攻击姿态冻结结束时间：近战 = hitTimeMs；弹体 = 动画时长（弹体飞行期间怪物可继续移动）
+        final long freezeEndMs;
+        // 弹体出手瞬间的目标快照落点（matching reference: 095 SetBallDestPoint_63A130）
+        final int landingX;
+        final int landingY;
 
-        PendingAttack(int attackIndex, MobAttack attack, int targetId, long hitTimeMs) {
+        PendingAttack(int attackIndex, MobAttack attack, int targetId, long hitTimeMs, long freezeEndMs,
+                      int landingX, int landingY) {
             this.attackIndex = attackIndex;
             this.attack = attack;
             this.targetId = targetId;
             this.hitTimeMs = hitTimeMs;
+            this.freezeEndMs = freezeEndMs;
+            this.landingX = landingX;
+            this.landingY = landingY;
         }
     }
 
@@ -183,27 +202,81 @@ public final class MobBehavior {
             chaseGiveUpAfterMs = 0;
         }
 
-        if (pendingAttack != null) {
-            // 攻击动画期间原地站立（matching reference: v95 怪物出手后 attackAfter 内不移动）
+        // 攻击 / 技能动画期间：移动冻结（matching reference: 095 CMob::DoAttack_6504D0 — 出手后
+        // VecCtrl 不再产生新移动，攻击包携带 stand 路径（elapse = attackAfter / 技能 600ms）覆盖
+        // 动画时长；动画期间不广播任何移动包，怪物播 attack/skill 姿态时不会位移）。
+        // 弹体攻击：冻结只覆盖攻击动画（freezeEndMs），弹体飞行期间怪物恢复移动，
+        // 伤害在弹体到达（hitTimeMs）时结算。
+        if ((pendingAttack != null && now < pendingAttack.freezeEndMs) || now < skillFreezeUntilMs) {
             action = ACT_STAND;
-        } else {
-            // 方向决策（每 tick 递减，归零重选）
-            moveTick--;
-            if (moveTick <= 0) {
-                decide();
-            }
+            justUnfrozen = true;
+            return Optional.empty();
+        }
 
-            // 推进
-            if (mob.getTemplate().isFlying()) {
-                flyStep();
-            } else if (falling) {
-                fallStep();
+        // v95 出手前停步：可出手时先切 stand 并 flush 累积移动作为普通移动包广播，停步
+        // 持续一个批次时长（300ms，与客户端路径播放时长一致），客户端播完行走/飞行路径
+        // 后怪物恰好停在出手位置；随后攻击包只携带 stand 元素覆盖动画时长——攻击姿态期间
+        // 零位移，且不会出现"移动元素在一次性动作期间被插值回放"的位移（matching
+        // reference: 095 DoAttack — 怪物停步后出手，攻击包路径为原地 stand）。
+        if (pendingAttack == null) {
+            if (attackStopUntilMs == 0) {
+                final Optional<CombatChoice> choice = pickCombat(now);
+                if (choice.isPresent()) {
+                    // 停步武装时锁定出手选择（queuedCombat），停步期间不重掷技能概率——
+                    // 若每 tick 重新 pickCombat，90% 失败的技能 roll 会取消停步，导致
+                    // 纯技能怪（无攻击在射程内）几乎永远不出技能
+                    queuedCombat = choice.get();
+                    attackStopUntilMs = now + BATCH_TICKS * TICK_MS;
+                    action = ACT_STAND;
+                    Optional<MovePath> toBroadcast = Optional.empty();
+                    if (batchElems.isEmpty()) {
+                        batchStartX = x0;
+                        batchStartY = y0;
+                    } else if (action != batchAction) {
+                        toBroadcast = flushBatch();
+                        batchStartX = x0;
+                        batchStartY = y0;
+                    }
+                    appendElement(x0, y0);
+                    batchAction = ACT_STAND;
+                    return toBroadcast;
+                }
             } else {
-                walkStep();
+                final User stopTarget = field.getUserPool().getById(queuedCombat.targetId).orElse(null);
+                final boolean stillValid = stopTarget != null && hateId != 0
+                        && !mob.getMobStat().hasOption(MobTemporaryStat.Stun)
+                        && (queuedCombat.isSkill
+                                || isAttackRangeHit(queuedCombat.attack, stopTarget.getX(), stopTarget.getY()));
+                if (!stillValid) {
+                    // 目标离场 / 离开射程 / 被 Stun → 取消停步，恢复正常行为
+                    attackStopUntilMs = 0;
+                    queuedCombat = null;
+                } else if (now >= attackStopUntilMs) {
+                    attackStopUntilMs = 0;
+                    fireCombat(queuedCombat, now);
+                    queuedCombat = null;
+                    return Optional.empty();
+                } else {
+                    // 停步等待中：不推进、不广播（stand 包已发，去重避免重复）
+                    action = ACT_STAND;
+                    return Optional.empty();
+                }
             }
+        }
 
-            // 攻击 / 技能决策（出手后本 tick 内 pendingAttack 置位，下一 tick 起原地站立）
-            tryCombat(now);
+        // 方向决策（每 tick 递减，归零重选）
+        moveTick--;
+        if (moveTick <= 0) {
+            decide();
+        }
+
+        // 推进
+        if (mob.getTemplate().isFlying()) {
+            flyStep();
+        } else if (falling) {
+            fallStep();
+        } else {
+            walkStep();
         }
 
         // === 批量累积（方案B） ===
@@ -223,8 +296,14 @@ public final class MobBehavior {
         appendElement(x0, y0);
         batchAction = action;
 
-        // 累积满 BATCH_TICKS 个 tick → 重组广播（动作切换已广播过则本帧不再重复广播）
-        if (batchTickCount >= BATCH_TICKS && toBroadcast.isEmpty()) {
+        // 解冻后首个 tick 立即广播（行走/飞行动画即时恢复）；否则累积满 BATCH_TICKS 重组
+        // 广播（动作切换已广播过则本帧不再重复广播）
+        if (justUnfrozen) {
+            justUnfrozen = false;
+            if (toBroadcast.isEmpty()) {
+                toBroadcast = flushBatch();
+            }
+        } else if (batchTickCount >= BATCH_TICKS && toBroadcast.isEmpty()) {
             toBroadcast = flushBatch();
         }
         return toBroadcast;
@@ -244,6 +323,10 @@ public final class MobBehavior {
         flyBobTime = 0;
         nextAttackTimeMs = 0;
         pendingAttack = null;
+        skillFreezeUntilMs = 0;
+        justUnfrozen = false;
+        attackStopUntilMs = 0;
+        queuedCombat = null;
         lastSentMoveAction = -1;
         batchStartX = 0;
         batchStartY = 0;
@@ -287,12 +370,12 @@ public final class MobBehavior {
     }
 
     /**
-     * 飞行航向决策（matching reference: 客户端 MobAi.RecomputeFlyDirection / 095 CtrlUpdateActiveFly）：
+     * 飞行航向决策：
      *   - 有仇恨目标 → 朝目标 + ±15° 抖动，追击 8~13 tick；
-     *   - 无目标且超出巡游半径 → 朝 home 飞回 + ±12° 抖动，8~13 tick；
-     *   - 半径内且距 home > 60px → 1/3 概率切向环绕（航向垂直 home→mob 连线）盘旋；
-     *   - 其余 → 全 360° 随机航向巡游，5~16 tick。
-     * 实际航向在 flyStep 中以最大角速度平滑偏转到目标角，轨迹呈弧线而非折线。
+     *   - 无目标 → 全地图随机飞行：在地图边界内随机选目的地，直线飞向它（±10° 抖动），
+     *     时长按距离/速度估算（5~30 tick），到达或超时后重选下一个目的地。
+     * 实际航向在 flyStep 中以最大角速度平滑偏转到目标角，轨迹呈弧线而非折线；
+     * 撞边界时航向反弹，不会飞出地图。
      */
     private void decideFlyDirection(final int target) {
         if (target != 0 && hateId != 0) {
@@ -305,25 +388,29 @@ public final class MobBehavior {
                 return;
             }
         }
-        final float dx = mob.getX() - mob.getSpawnX();
-        final float dy = mob.getY() - mob.getSpawnY();
-        final float distSq = dx * dx + dy * dy;
-        if (distSq > FLY_HOVER_RADIUS * FLY_HOVER_RADIUS) {
-            // 超出巡游半径：飞回 home，防止长期漂移离图
-            flyTargetAngle = (float) Math.atan2(-dy, -dx)
-                    + (float) Math.toRadians(Util.getRandom(-12, 12));
-            moveTick = (Util.getRandom(0, 399) + 800) / 90;
-        } else if (Util.getRandom(0, 2) == 0 && distSq > 60f * 60f) {
-            // 切向环绕：航向垂直 home→mob 连线，形成盘旋弧线
-            final float sign = Util.getRandom(0, 1) == 0 ? 1f : -1f;
-            flyTargetAngle = (float) Math.atan2(dy, dx) + (float) (Math.PI / 2 * sign)
-                    + (float) Math.toRadians(Util.getRandom(-10, 10));
-            moveTick = (Util.getRandom(0, 399) + 800) / 90;
-        } else {
-            // 全 360° 随机航向巡游（含垂直分量，不再局限于水平摆动）
-            flyTargetAngle = (float) Math.toRadians(Util.getRandom(0, 360));
-            moveTick = (Util.getRandom(0, 999) + 500) / 90; // 5~16 tick
+        // 全地图随机目的地：重选几次避免目的地与当前位置过近导致原地抖动
+        ensureBorder();
+        final int minX = (int) border.getLeft();
+        final int maxX = (int) border.getRight();
+        final int minY = (int) border.getTop();
+        final int maxY = (int) border.getBottom();
+        int destX = Util.getRandom(minX, maxX);
+        int destY = Util.getRandom(minY, maxY);
+        for (int i = 0; i < 4; i++) {
+            final float ddx = destX - mob.getX();
+            final float ddy = destY - mob.getY();
+            if (ddx * ddx + ddy * ddy >= 120f * 120f) {
+                break;
+            }
+            destX = Util.getRandom(minX, maxX);
+            destY = Util.getRandom(minY, maxY);
         }
+        final float dx = destX - mob.getX();
+        final float dy = destY - mob.getY();
+        flyTargetAngle = (float) Math.atan2(dy, dx) + (float) Math.toRadians(Util.getRandom(-10, 10));
+        // 按直线距离 / 飞行速度估算到达所需 tick 数（banking 转向会略偏离直线，超时后自然重选）
+        final float dist = (float) Math.sqrt(dx * dx + dy * dy);
+        moveTick = (int) Math.max(5, Math.min(30, dist / flySpeedPx * 1000 / TICK_MS));
     }
 
     private int resolveHate() {
@@ -628,22 +715,23 @@ public final class MobBehavior {
     // COMBAT ----------------------------------------------------------------------------------------------------------
 
     /**
-     * 攻击 / 技能决策（每 tick 调用一次，仅在无 pendingAttack 时）：
-     * 有仇恨目标、攻击冷却就绪、未被 Stun 时——先按低概率尝试技能（约每 5 秒一次机会，
-     * getNextSkill 已处理 Seal / cooltime / MP），否则遍历攻击表，目标落在任一 attack 的
-     * 相对命中框内则出手：广播攻击动作包（客户端播放 attack{n} 姿态与施法特效），
-     * 置 pendingAttack，attackAfter 毫秒后由 resolvePendingAttack 服务端结算伤害。
+     * 攻击 / 技能决策（每 tick 调用一次，仅在无冻结时）：有仇恨目标、攻击冷却就绪、
+     * 未被 Stun 时——先按低概率尝试技能（约每 5 秒一次机会，getNextSkill 已处理
+     * Seal / cooltime / MP），否则遍历攻击表，目标落在任一 attack 的相对命中框内则
+     * 返回选定的出手（matching reference: 095 CMob::DoAttack_6504D0 / TryDoingSkill）。
+     * 本方法只做决策不广播：update() 先让怪物停步（v95 出手前停步），停步持续一个
+     * 批次时长后由 fireCombat 广播攻击包。
      */
-    private void tryCombat(final long now) {
+    private Optional<CombatChoice> pickCombat(final long now) {
         if (hateId == 0 || now < nextAttackTimeMs) {
-            return;
+            return Optional.empty();
         }
         if (mob.getMobStat().hasOption(MobTemporaryStat.Stun)) {
-            return;
+            return Optional.empty();
         }
         final Optional<User> targetResult = field.getUserPool().getById(hateId);
         if (targetResult.isEmpty()) {
-            return;
+            return Optional.empty();
         }
         final User target = targetResult.get();
         final MobTemplate template = mob.getTemplate();
@@ -651,36 +739,103 @@ public final class MobBehavior {
         if (!template.isOnlyNormalAttack() && Util.getRandom(0, 9) == 0) {
             final Optional<MobSkill> skillResult = mob.getNextSkill();
             if (skillResult.isPresent()) {
-                final MobSkill skill = skillResult.get();
                 mob.setLeft(target.getX() < mob.getX());
-                final int dir = mob.isLeft() ? 1 : 0;
-                // skill action 22..38 = SKILL1..F：((21 + action) << 1) | dir
-                broadcastAction((byte) (((21 + skill.getAction()) << 1) | dir),
-                        skill.getSkillId() | (skill.getSkillLevel() << 8), 600, true);
-                MobCombat.applyMobSkill(mob, skill);
-                nextAttackTimeMs = now + 600;
-                return;
+                return Optional.of(new CombatChoice(true, skillResult.get(), null, -1, target.getCharacterId()));
             }
         }
 
         for (var entry : template.getAttacks().entrySet()) {
             final MobAttack attack = entry.getValue();
-            if (mob.getRelativeRect(attack.getRange()).isInsideRect(target.getX(), target.getY())) {
+            if (isAttackRangeHit(attack, target.getX(), target.getY())) {
                 mob.setLeft(target.getX() < mob.getX());
-                final int dir = mob.isLeft() ? 1 : 0;
-                // attack action 13..21 = ATTACK1..F：((13 + attackIndex) << 1) | dir
-                broadcastAction((byte) (((13 + entry.getKey()) << 1) | dir), 0, attack.getAttackAfter(), false);
-                if (attack.getConMp() > 0) {
-                    mob.setMp(Math.max(mob.getMp() - attack.getConMp(), 0));
-                }
-                pendingAttack = new PendingAttack(entry.getKey(), attack, target.getCharacterId(), now + attack.getAttackAfter());
-                nextAttackTimeMs = now + attack.getAttackAfter() + 400;
-                return;
+                return Optional.of(new CombatChoice(false, null, attack, entry.getKey(), target.getCharacterId()));
             }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 攻击命中距离判定（matching reference: 095 CMob::DoAttack）。
+     * 弹体怪 WZ range 为圆 {sp, r}（以朝左为基准，sp.x 随朝向镜像），圆心 = 怪物位置 + sp；
+     * 近战怪 range 为矩形，走 getRelativeRect 镜像。
+     */
+    private boolean isAttackRangeHit(final MobAttack attack, final int x, final int y) {
+        if (attack.isCircleRange()) {
+            final int spX = mob.isLeft() ? attack.getRangeSpX() : -attack.getRangeSpX();
+            final double dx = mob.getX() + spX - x;
+            final double dy = mob.getY() + attack.getRangeSpY() - y;
+            final double r = attack.getRangeRadius();
+            return dx * dx + dy * dy <= r * r;
+        }
+        return mob.getRelativeRect(attack.getRange()).isInsideRect(x, y);
+    }
+
+    /** 停步完成后广播攻击/技能包并置冻结状态（matching reference: 095 DoAttack 出手）。 */
+    private void fireCombat(final CombatChoice choice, final long now) {
+        final int dir = mob.isLeft() ? 1 : 0;
+        if (choice.isSkill) {
+            // skill action 22..38 = SKILL1..F：((21 + action) << 1) | dir
+            broadcastAction((byte) (((21 + choice.skill.getAction()) << 1) | dir),
+                    choice.skill.getSkillId() | (choice.skill.getSkillLevel() << 8), 600, true, List.of());
+            MobCombat.applyMobSkill(mob, choice.skill);
+            nextAttackTimeMs = now + 600;
+            skillFreezeUntilMs = now + 600;
+        } else {
+            final MobAttack attack = choice.attack;
+            final List<Tuple<Integer, Integer>> ballTargets = new ArrayList<>();
+            long hitTimeMs = now + attack.getAttackAfter();
+            if (attack.isProjectile()) {
+                // v95 弹体攻击：出手瞬间快照目标落点（SetBallDestPoint_63A130），每个弹体一条
+                // aMultiTargetForBall 条目，客户端弹体沿直线飞向该点（非指向性，可躲）。
+                // 命中结算按弹体飞行时长（distance / bulletSpeed，WZ 缺失时回退 attackAfter）。
+                final User target = field.getUserPool().getById(choice.targetId).orElse(null);
+                if (target != null) {
+                    for (int i = 0; i < attack.getBulletNumber(); i++) {
+                        ballTargets.add(Tuple.of(target.getX(), target.getY()));
+                    }
+                    final double dist = Math.hypot(target.getX() - mob.getX(), target.getY() - mob.getY());
+                    final long flightMs = attack.getBulletSpeed() > 0
+                            ? (long) (dist / attack.getBulletSpeed() * 1000.0)
+                            : attack.getAttackAfter();
+                    hitTimeMs = now + Math.max(attack.getAttackAfter(), Math.min(flightMs, 3000));
+                }
+            }
+            // attack action 13..21 = ATTACK1..F：((13 + attackIndex) << 1) | dir
+            broadcastAction((byte) (((13 + choice.attackIndex) << 1) | dir), 0, attack.getAttackAfter(), false, ballTargets);
+            if (attack.getConMp() > 0) {
+                mob.setMp(Math.max(mob.getMp() - attack.getConMp(), 0));
+            }
+            pendingAttack = new PendingAttack(choice.attackIndex, attack, choice.targetId, hitTimeMs,
+                    now + attack.getAttackAfter(),
+                    ballTargets.isEmpty() ? mob.getX() : ballTargets.get(0).getLeft(),
+                    ballTargets.isEmpty() ? mob.getY() : ballTargets.get(0).getRight());
+            // 冷却从弹体落地结算后起算，避免弹体还在飞行时下一轮出手停步
+            nextAttackTimeMs = hitTimeMs + 400;
         }
     }
 
-    /** 延迟到期后结算已出手的攻击：目标存活且仍在命中框内才扣血，否则 miss。 */
+    private static final class CombatChoice {
+        final boolean isSkill;
+        final MobSkill skill;
+        final MobAttack attack;
+        final int attackIndex;
+        final int targetId;
+
+        CombatChoice(boolean isSkill, MobSkill skill, MobAttack attack, int attackIndex, int targetId) {
+            this.isSkill = isSkill;
+            this.skill = skill;
+            this.attack = attack;
+            this.attackIndex = attackIndex;
+            this.targetId = targetId;
+        }
+    }
+
+    /**
+     * 延迟到期后结算已出手的攻击：目标存活才扣血，否则 miss。
+     * 近战：目标须仍在命中框内；弹体（type=2）：非指向性，弹体飞向出手时的快照落点，
+     * 到达时目标身体偏离落点超过容差则落空（matching reference: 095 MobBullet 逐帧碰撞 /
+     * 客户端 MobAi.ProcessAttacks ProjectileHitTolerance=20px，身体矩形约 34x64）。
+     */
     private void resolvePendingAttack() {
         final PendingAttack p = pendingAttack;
         pendingAttack = null;
@@ -692,38 +847,55 @@ public final class MobBehavior {
         if (target.getHp() <= 0) {
             return;
         }
-        if (!mob.getRelativeRect(p.attack.getRange()).isInsideRect(target.getX(), target.getY())) {
+        if (p.attack.isProjectile()) {
+            final int toleranceX = 37; // 身体半宽 17 + 20 容差
+            final int toleranceY = 52; // 身体半高 32 + 20 容差
+            if (Math.abs(target.getX() - p.landingX) > toleranceX || Math.abs(target.getY() - p.landingY) > toleranceY) {
+                return; // 弹体落在空处 → miss
+            }
+        } else if (!isAttackRangeHit(p.attack, target.getX(), target.getY())) {
             return; // 目标已离开命中框 → miss，不结算
         }
         MobCombat.applyMobHit(mob, target, p.attack, p.attackIndex);
     }
 
     /**
-     * 广播攻击/技能动作包：actionMask=1 + actionAndDir + targetInfo，MovePath 为原地站立
-     * 单元素（elapse = attackAfter），客户端 SetActionAndDir 播放 attack{n}/skill 姿态与
-     * SpawnMobAttackCastFx 施法特效。
+     * 广播攻击/技能动作包：actionMask=1 + actionAndDir + targetInfo。MovePath 只携带一个
+     * 原地 stand 元素（elapse = attackAfter / 技能 600ms）覆盖动画时长——出手前怪物已
+     * 停步（update() 的停步阶段把累积移动作为普通移动包广播），因此攻击姿态期间客户端
+     * 路径插值回放的是"原地 stand"，怪物不会位移（matching reference: 095 DoAttack —
+     * 攻击包携带 stand 路径覆盖动画时长，VecCtrl 在一次性动作期间不产生新移动）。
      */
-    private void broadcastAction(byte actionAndDir, int targetInfo, int elapse, boolean isSkill) {
+    private void broadcastAction(byte actionAndDir, int targetInfo, int elapse, boolean isSkill,
+                                 final List<Tuple<Integer, Integer>> ballTargets) {
         final MobAttackInfo mai = new MobAttackInfo();
         mai.actionMask = 1;
         mai.actionAndDir = actionAndDir;
         mai.targetInfo = targetInfo;
-        mai.multiTargetForBall = new ArrayList<>();
+        mai.multiTargetForBall = ballTargets;
         mai.randTimeForAreaAttack = new ArrayList<>();
         mai.isAttack = !isSkill;
         mai.isSkill = isSkill;
 
+        // 停步阶段累积的 stand 元素已广播过（去重），出手时清空批次避免冻结结束后
+        // 旧 stand 元素被回放、拖延行走动画恢复
+        flushBatch();
+
+        // 攻击包路径 = 仅 stand 元素，起点 = 出手位置，动画期间零位移
         final int dir = mob.isLeft() ? 1 : 0;
-        final MoveElem elem = new MoveElem((byte) 0); // NORMAL
-        elem.setX((short) mob.getX());
-        elem.setY((short) mob.getY());
-        elem.setVx((short) 0);
-        elem.setVy((short) 0);
-        elem.setFh((short) mob.getFoothold());
-        elem.setMoveAction((byte) ((2 << 1) | dir)); // stand
-        elem.setElapse((short) Math.clamp(elapse, 100, 32767));
-        final MovePath path = new MovePath((short) mob.getX(), (short) mob.getY(), (short) 0, (short) 0, List.of(elem));
-        field.broadcastPacket(MobPacket.mobMove(mob, mai, path));
+        final MoveElem stand = new MoveElem((byte) 0); // NORMAL
+        stand.setX((short) mob.getX());
+        stand.setY((short) mob.getY());
+        stand.setVx((short) 0);
+        stand.setVy((short) 0);
+        stand.setFh((short) mob.getFoothold());
+        stand.setMoveAction((byte) ((2 << 1) | dir)); // stand
+        stand.setElapse((short) Math.clamp(elapse, 100, 32767));
+        lastSentMoveAction = (byte) ((2 << 1) | dir);
+
+        field.broadcastPacket(MobPacket.mobMove(mob, mai,
+                new MovePath((short) mob.getX(), (short) mob.getY(), (short) 0, (short) 0,
+                        new ArrayList<>(List.of(stand)))));
     }
 
     // INIT -----------------------------------------------------------------------------------------------------------
@@ -747,10 +919,13 @@ public final class MobBehavior {
         // （matching reference: 客户端 MobDataLoader — WalkSpeed = (rawSpeed+100)/100*125）。
         final int speed = mob.getTemplate().getSpeed();
         this.walkSpeedPx = Math.clamp(speed + 100, 10, 140) / 100f * 125f;
-        // 飞行速度口径与客户端一致（matching reference: MobAi.GetFlySpeedPx — FlySpeed(0..140)/100*125，
-        // FlySpeed=0（仅 fly 节点置 MoveAbility=4）时兜底 110 px/s）。
-        final int flySpeed = mob.getTemplate().getFlySpeed();
-        this.flySpeedPx = flySpeed > 0 ? flySpeed / 100f * 125f : 110f;
+        // 飞行速度口径与客户端一致（matching reference: MobDataLoader — WZ flySpeed 带 -100 偏移，
+        // FlySpeed = clamp(rawFlySpeed + 100, 0, 140)；GetFlySpeedPx = FlySpeed/100*125，
+        // 无 flySpeed 属性或有效值为 0（仅 fly 节点置 MoveAbility=4）时兜底 110 px/s）。
+        final int effFlySpeed = mob.getTemplate().hasFlySpeed()
+                ? Math.clamp(mob.getTemplate().getFlySpeed() + 100, 0, 140)
+                : 0;
+        this.flySpeedPx = effFlySpeed > 0 ? effFlySpeed / 100f * 125f : 110f;
     }
 
     /** 确保 border 非空后再使用（防御：任何状态异常都不会让 clampX/clampY 空指针）。 */

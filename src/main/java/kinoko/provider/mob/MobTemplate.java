@@ -236,6 +236,10 @@ public final class MobTemplate {
         return flySpeed;
     }
 
+    public boolean hasFlySpeed() {
+        return hasFlySpeed;
+    }
+
     public boolean isFlying() {
         // v95 飞行怪用 info/flySpeed 属性标记（如 9400560/9400200），多数不带 moveAbility；
         // 双口径兼容：moveAbility==4 或 flySpeed 存在都视为飞行。
@@ -332,6 +336,11 @@ public final class MobTemplate {
                 int type = 0;
                 int attackAfter = 0;
                 int elemAttr = 0;
+                int bulletSpeed = 0;
+                int bulletNumber = 1;
+                int rangeSpX = 0;
+                int rangeSpY = 0;
+                int rangeRadius = 0;
                 for (var attackInfoEntry : attackInfoProp.getItems().entrySet()) {
                     switch (attackInfoEntry.getKey()) {
                         case "disease" -> {
@@ -353,9 +362,17 @@ public final class MobTemplate {
                             deadlyAttack = WzProvider.getInteger(attackInfoEntry.getValue()) != 0;
                         }
                         case "range" -> {
-                            if (attackInfoEntry.getValue() instanceof WzProperty rangeProp
-                                    && rangeProp.get("lt") instanceof WzVector && rangeProp.get("rb") instanceof WzVector) {
-                                range = WzProvider.getRect(rangeProp);
+                            if (attackInfoEntry.getValue() instanceof WzProperty rangeProp) {
+                                if (rangeProp.get("lt") instanceof WzVector && rangeProp.get("rb") instanceof WzVector) {
+                                    range = WzProvider.getRect(rangeProp);
+                                } else if (rangeProp.get("sp") instanceof WzVector sp && rangeProp.get("r") instanceof Integer) {
+                                    // 弹体怪（type=2）的 range 是圆 {sp, r}（matching reference: 095 SetBallDestPoint 用 sp/r）
+                                    rangeSpX = sp.getX();
+                                    rangeSpY = sp.getY();
+                                    rangeRadius = (Integer) rangeProp.get("r");
+                                    range = Rect.of(rangeSpX - rangeRadius, rangeSpY - rangeRadius,
+                                            rangeSpX + rangeRadius, rangeSpY + rangeRadius);
+                                }
                             }
                         }
                         case "type" -> {
@@ -363,6 +380,12 @@ public final class MobTemplate {
                         }
                         case "attackAfter" -> {
                             attackAfter = WzProvider.getInteger(attackInfoEntry.getValue());
+                        }
+                        case "bulletSpeed" -> {
+                            bulletSpeed = WzProvider.getInteger(attackInfoEntry.getValue());
+                        }
+                        case "bulletNumber" -> {
+                            bulletNumber = Math.max(1, WzProvider.getInteger(attackInfoEntry.getValue()));
                         }
                         case "elemAttr" -> {
                             final String elem = WzProvider.getString(attackInfoEntry.getValue());
@@ -406,7 +429,12 @@ public final class MobTemplate {
                         range,
                         type,
                         attackAfter,
-                        elemAttr
+                        elemAttr,
+                        bulletSpeed,
+                        bulletNumber,
+                        rangeSpX,
+                        rangeSpY,
+                        rangeRadius
                 ));
             }
         }
