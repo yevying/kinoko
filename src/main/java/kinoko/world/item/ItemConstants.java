@@ -81,6 +81,10 @@ public final class ItemConstants {
         return weaponPrefix == 13 || weaponPrefix == 14 || weaponPrefix == 16 || weaponPrefix == 17;
     }
 
+    public static boolean isWeaponSticker(int itemId) {
+        return itemId / 100000 == 17;
+    }
+
     public static boolean isPet(int itemId) {
         return itemId / 10000 == 500;
     }

@@ -76,7 +76,12 @@ public final class ItemInfo {
     }
 
     public boolean isCash() {
-        return getInfo(ItemInfoType.cash) != 0;
+        if (getInfo(ItemInfoType.cash) != 0) return true;
+        // 武器贴纸（17xxxxxx）在 v95 恒为现金装备，必须着于现金武器槽 CASH_WEAPON=111。
+        // 缺少此判定时 Item.wz 未标注 info/cash 的贴纸会被当作普通武器发到普通槽 -11，
+        // 顶掉普通武器后 AvatarLook 编码 hairEquip[11]=贴纸、weaponStickerId=0，
+        // 原版客户端无法按普通武器渲染 17 系动作帧 → 远程玩家武器不可见。
+        return ItemConstants.isWeaponSticker(itemId);
     }
 
     public boolean isQuest() {

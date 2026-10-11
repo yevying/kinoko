@@ -213,6 +213,42 @@ public final class MobBehavior {
             return Optional.empty();
         }
 
+        // 移动冻结（Stun/Freeze/Doom）：matching reference: kinoko MobTemporaryStat.MOVEMENT_AFFECTING_STAT —
+        // Stun/Freeze/Doom 期间怪物禁止移动且不能攻击。效果由 MobPool.expireTemporaryStat 逐 tick
+        // 清除（到期广播 MobStatReset），因此本分支在效果持续期间每 tick 强制 ACT_STAND、不推进
+        // decide/walkStep/flyStep，并把原地 stand 元素累积成 stand 路径广播——所有客户端看到
+        // 怪物原地冻结，而不是"只有特效、仍继续行走"。
+        // 冻结起始 tick（action 从 move/chase/fly 切到 stand）会 flush 旧移动批次立即广播，
+        // 客户端播完残余移动后定格在冻结位置；随后每 BATCH_TICKS 广播一条原地 stand 路径维持姿态。
+        // 解冻后首个 tick 由正常流程的 action 切换（decide 重选 move/chase/fly）flush 冻结批次并
+        // 恢复移动，无需借助 justUnfrozen。
+        if (mob.getMobStat().hasOption(MobTemporaryStat.Stun)
+                || mob.getMobStat().hasOption(MobTemporaryStat.Freeze)
+                || mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
+            // 冻结期间不能攻击：取消出手前停步与锁定的出手选择（pickCombat 只查 Stun，
+            // 对 Freeze/Doom 也须在此统一取消）
+            attackStopUntilMs = 0;
+            queuedCombat = null;
+            action = ACT_STAND;
+            Optional<MovePath> toBroadcast = Optional.empty();
+            if (batchElems.isEmpty()) {
+                batchStartX = x0;
+                batchStartY = y0;
+            } else if (action != batchAction) {
+                // 移动→冻结切换：先 flush 累积移动批次，再累积原地 stand 批次
+                toBroadcast = flushBatch();
+                batchStartX = x0;
+                batchStartY = y0;
+            }
+            appendElement(x0, y0);
+            batchAction = ACT_STAND;
+            // 冻结期间每 BATCH_TICKS 广播一次原地 stand 路径，维持客户端冻结姿态
+            if (batchTickCount >= BATCH_TICKS) {
+                toBroadcast = flushBatch();
+            }
+            return toBroadcast;
+        }
+
         // v95 出手前停步：可出手时先切 stand 并 flush 累积移动作为普通移动包广播，停步
         // 持续一个批次时长（300ms，与客户端路径播放时长一致），客户端播完行走/飞行路径
         // 后怪物恰好停在出手位置；随后攻击包只携带 stand 元素覆盖动画时长——攻击姿态期间
