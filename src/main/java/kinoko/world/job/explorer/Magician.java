@@ -1,5 +1,6 @@
 package kinoko.world.job.explorer;
 
+import kinoko.packet.field.MobPacket;
 import kinoko.packet.world.MessagePacket;
 import kinoko.packet.world.WvsContext;
 import kinoko.provider.SkillProvider;
@@ -189,6 +190,24 @@ public final class Magician extends SkillProcessor {
             case HEAL:
                 final int healPercentage = si.getValue(SkillStat.hp, slv) / skill.getAffectedMemberCount();
                 user.addHp(user.getMaxHp() * healPercentage / 100);
+                // matching 095 原版：治愈对黑暗/亡灵怪物造成固定伤害（WZ common damage="190+3*x"，
+                // mobCount=6，lt/rb 范围）。客户端发包携带范围内 undead 怪物 targetIds，服务端
+                // 仅对 info/undead=1 的怪物结算伤害并广播 MobDamaged（同 Monster Magnet 模式）。
+                final int healDamage = si.getValue(SkillStat.damage, slv);
+                if (healDamage > 0) {
+                    skill.forEachAffectedMob(field, (mob) -> {
+                        if (mob.getTemplate().isUndead()) {
+                            // 治愈伤害无客户端本地预测（联机仅服务端结算），故广播不排除施法者本人，
+                            // 施法者客户端也能显示伤害数字与 hit1 受击动画（同 MobDamaged 294 通用路径）。
+                            // 必须先广播 MobDamaged 再结算伤害：若该伤害击杀怪物，mob.damage 内部
+                            // removeMob 会异步排队 MobLeaveField，客户端收到后立即移除怪物节点；
+                            // 此时若 MobDamaged 在其之后到达，OnRemoteMobDamaged 因 _remoteMobs 已
+                            // 不含该怪物而直接 return，伤害数字完全不显示（表现为"秒杀无数字"）。
+                            field.broadcastPacket(MobPacket.mobDamaged(mob, healDamage));
+                            mob.damage(user, healDamage, 0);
+                        }
+                    });
+                }
                 return;
             case INVINCIBLE:
                 user.setTemporaryStat(CharacterTemporaryStat.Invincible, TemporaryStatOption.of(si.getValue(SkillStat.x, slv), skillId, buffedDuration));

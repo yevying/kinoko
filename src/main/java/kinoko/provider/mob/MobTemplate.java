@@ -47,8 +47,9 @@ public final class MobTemplate {
     private final int moveAbility;
     private final int flySpeed;
     private final boolean hasFlySpeed;
+    private final boolean undead;
 
-    public MobTemplate(int id, int level, int exp, int maxHp, int maxMP, int pad, int pdr, int mad, int mdr, int acc, int eva, int hpRecovery, int mpRecovery, int fixedDamage, int removeAfter, int dropItemPeriod, int hpTagColor, int hpTagBgColor, boolean boss, boolean noFlip, boolean pickUpDrop, boolean firstAttack, boolean damagedByMob, boolean onlyNormalAttack, Map<Integer, MobAttack> attacks, Map<Integer, MobSkill> skills, Map<ElementAttribute, DamagedAttribute> damagedElemAttr, Set<Integer> damagedBySkill, List<Integer> revives, int reviveDelay, int speed, int moveAbility, int flySpeed, boolean hasFlySpeed) {
+    public MobTemplate(int id, int level, int exp, int maxHp, int maxMP, int pad, int pdr, int mad, int mdr, int acc, int eva, int hpRecovery, int mpRecovery, int fixedDamage, int removeAfter, int dropItemPeriod, int hpTagColor, int hpTagBgColor, boolean boss, boolean noFlip, boolean pickUpDrop, boolean firstAttack, boolean damagedByMob, boolean onlyNormalAttack, Map<Integer, MobAttack> attacks, Map<Integer, MobSkill> skills, Map<ElementAttribute, DamagedAttribute> damagedElemAttr, Set<Integer> damagedBySkill, List<Integer> revives, int reviveDelay, int speed, int moveAbility, int flySpeed, boolean hasFlySpeed, boolean undead) {
         this.id = id;
         this.level = level;
         this.exp = exp;
@@ -83,6 +84,7 @@ public final class MobTemplate {
         this.moveAbility = moveAbility;
         this.flySpeed = flySpeed;
         this.hasFlySpeed = hasFlySpeed;
+        this.undead = undead;
     }
 
     public int getId() {
@@ -246,6 +248,11 @@ public final class MobTemplate {
         return moveAbility == 4 || hasFlySpeed;
     }
 
+    public boolean isUndead() {
+        // Mob.wz info/undead=1 标记黑暗/亡灵怪物（治愈 2301002 对其造成伤害）
+        return undead;
+    }
+
     @Override
     public String toString() {
         return "MobTemplate{" +
@@ -318,6 +325,7 @@ public final class MobTemplate {
         int moveAbility = 0;
         int flySpeed = 0;
         boolean hasFlySpeed = false;
+        boolean undead = false;
         // Process attacks
         for (var entry : mobProp.getItems().entrySet()) {
             if (entry.getKey().startsWith("attack")) {
@@ -520,6 +528,9 @@ public final class MobTemplate {
                     flySpeed = WzProvider.getInteger(infoEntry.getValue());
                     hasFlySpeed = true;
                 }
+                case "undead" -> {
+                    undead = WzProvider.getInteger(infoEntry.getValue()) != 0;
+                }
                 case "skill" -> {
                     if (!(infoEntry.getValue() instanceof WzProperty skillEntries)) {
                         throw new ProviderError("Failed to resolve mob skills for mob : %d", mobId);
@@ -619,7 +630,8 @@ public final class MobTemplate {
                 speed,
                 moveAbility,
                 flySpeed,
-                hasFlySpeed
+                hasFlySpeed,
+                undead
         );
     }
 

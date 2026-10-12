@@ -308,8 +308,13 @@ public final class MobBehavior {
         }
 
         // 推进
-        if (mob.getTemplate().isFlying()) {
+        // Doom 变身蜗牛的飞行怪不再飞行（matching reference: 095 CMob::OnDoomed — 变身后
+        // 移动方式变为地面行走，速度取蜗牛模板）：先坠落落到下方平台，落地后走 walkStep
+        //（effectiveWalkSpeedPx 已取蜗牛速度）。Doom 到期后 decide() 重新选 ACT_FLY 恢复飞行。
+        if (mob.getTemplate().isFlying() && !mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
             flyStep();
+        } else if (mob.getTemplate().isFlying() && !falling && !isGrounded()) {
+            startFall(mob.getX());
         } else if (falling) {
             fallStep();
         } else {
@@ -384,8 +389,9 @@ public final class MobBehavior {
 
     private void decide() {
         final int target = resolveHate();
-        if (mob.getTemplate().isFlying()) {
-            // 飞行怪恒保持 fly 姿态，航向决策复刻 095 CtrlUpdateActiveFly
+        if (mob.getTemplate().isFlying() && !mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
+            // 飞行怪恒保持 fly 姿态，航向决策复刻 095 CtrlUpdateActiveFly；
+            // Doom 变身蜗牛时走地面决策（坠落落地后行走/追击）
             action = ACT_FLY;
             decideFlyDirection(target);
             return;
@@ -637,6 +643,12 @@ public final class MobBehavior {
         while (diff > Math.PI) diff -= 2 * Math.PI;
         while (diff < -Math.PI) diff += 2 * Math.PI;
         return diff;
+    }
+
+    /** 怪物是否站在有效平台上（Y 与 foothold 表面一致），Doom 飞行怪落地判定用。 */
+    private boolean isGrounded() {
+        final Foothold fh = footholdBySn.get(mob.getFoothold());
+        return fh != null && !fh.isWall() && Math.abs(fh.getYFromX(mob.getX()) - mob.getY()) <= 2;
     }
 
     private void startFall(float edgeX) {

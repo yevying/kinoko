@@ -81,6 +81,13 @@ public abstract class PacketHandler extends SimpleChannelInboundHandler<InPacket
 
     @Override
     public final void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        // 客户端关闭/网络断开时 netty 读 socket 会抛 SocketException: Connection reset 等 IOException ——
+        // 这是正常断开流程（随后 channelInactive 会 client::close 清理），不应按错误记录完整堆栈刷屏。
+        if (cause instanceof java.io.IOException) {
+            log.log(ServerConfig.DEBUG_MODE ? Level.DEBUG : Level.TRACE, "Connection closed: {}", cause.getMessage());
+            ctx.close();
+            return;
+        }
         log.error("Exception caught while handling packet", cause);
         cause.printStackTrace();
     }
