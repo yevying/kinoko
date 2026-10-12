@@ -1,6 +1,7 @@
 package kinoko.world.field.mob;
 
 import kinoko.packet.field.MobPacket;
+import kinoko.provider.MobProvider;
 import kinoko.provider.mob.MobAttack;
 import kinoko.provider.mob.MobSkill;
 import kinoko.provider.mob.MobTemplate;
@@ -213,20 +214,20 @@ public final class MobBehavior {
             return Optional.empty();
         }
 
-        // 移动冻结（Stun/Freeze/Doom）：matching reference: kinoko MobTemporaryStat.MOVEMENT_AFFECTING_STAT —
-        // Stun/Freeze/Doom 期间怪物禁止移动且不能攻击。效果由 MobPool.expireTemporaryStat 逐 tick
-        // 清除（到期广播 MobStatReset），因此本分支在效果持续期间每 tick 强制 ACT_STAND、不推进
-        // decide/walkStep/flyStep，并把原地 stand 元素累积成 stand 路径广播——所有客户端看到
-        // 怪物原地冻结，而不是"只有特效、仍继续行走"。
+        // 移动冻结（Stun/Freeze）：matching reference: 095 string_wz DOOM 描述 "Turns multiple
+        // enemies into snails. Changes the look, attack capacity, and movement speed" — Doom 变身
+        // 蜗牛仍可行走（速度取蜗牛模板），只是不能攻击；Stun/Freeze 才是原地冻结。效果由
+        // MobPool.expireTemporaryStat 逐 tick 清除（到期广播 MobStatReset），因此本分支在效果
+        // 持续期间每 tick 强制 ACT_STAND、不推进 decide/walkStep/flyStep，并把原地 stand 元素
+        // 累积成 stand 路径广播——所有客户端看到怪物原地冻结，而不是"只有特效、仍继续行走"。
         // 冻结起始 tick（action 从 move/chase/fly 切到 stand）会 flush 旧移动批次立即广播，
         // 客户端播完残余移动后定格在冻结位置；随后每 BATCH_TICKS 广播一条原地 stand 路径维持姿态。
         // 解冻后首个 tick 由正常流程的 action 切换（decide 重选 move/chase/fly）flush 冻结批次并
         // 恢复移动，无需借助 justUnfrozen。
         if (mob.getMobStat().hasOption(MobTemporaryStat.Stun)
-                || mob.getMobStat().hasOption(MobTemporaryStat.Freeze)
-                || mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
+                || mob.getMobStat().hasOption(MobTemporaryStat.Freeze)) {
             // 冻结期间不能攻击：取消出手前停步与锁定的出手选择（pickCombat 只查 Stun，
-            // 对 Freeze/Doom 也须在此统一取消）
+            // 对 Freeze 也须在此统一取消；Doom 不冻结移动，攻击禁止由 pickCombat 的 Doom 检查处理）
             attackStopUntilMs = 0;
             queuedCombat = null;
             action = ACT_STAND;
@@ -478,6 +479,20 @@ public final class MobBehavior {
 
     // STEPPERS --------------------------------------------------------------------------------------------------------
 
+    /**
+     * Doom 变身蜗牛时行走速度取蓝蜗牛模板 100101（WZ speed=-50 → clamp(50,10,140)/100*125 = 62.5 px/s），
+     * 否则取原模板速度（matching reference: 095 CMob::OnDoomed_64ED40 — 移动速度来自 m_pTemplateByDoom，
+     * DOOM 描述 "Changes the look, attack capacity, and movement speed"：变身仍移动，只是更慢）。
+     */
+    private float effectiveWalkSpeedPx() {
+        if (mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
+            return MobProvider.getMobTemplate(100101)
+                    .map(t -> Math.clamp(t.getSpeed() + 100, 10, 140) / 100f * 125f)
+                    .orElse(walkSpeedPx);
+        }
+        return walkSpeedPx;
+    }
+
     /** 地面行走 / 站立。走出平台端点且无有效连接平台时停在边缘并掉头，绝不坠落。 */
     private void walkStep() {
         if (action == ACT_STAND || inputX == 0) {
@@ -494,7 +509,7 @@ public final class MobBehavior {
         final float dt = TICK_MS / 1000f;
         final int dir = inputX;
         mob.setLeft(dir < 0);
-        float newX = mob.getX() + dir * walkSpeedPx * dt;
+        float newX = mob.getX() + dir * effectiveWalkSpeedPx() * dt;
         newX = clampX(newX);
 
         // 平台可能从右向左绘制，统一按 min/max 归一化跨度（matching reference: 客户端 MapData L/R）
@@ -762,7 +777,10 @@ public final class MobBehavior {
         if (hateId == 0 || now < nextAttackTimeMs) {
             return Optional.empty();
         }
-        if (mob.getMobStat().hasOption(MobTemporaryStat.Stun)) {
+        if (mob.getMobStat().hasOption(MobTemporaryStat.Stun)
+                || mob.getMobStat().hasOption(MobTemporaryStat.Freeze)
+                || mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
+            // Doom 变身蜗牛不能攻击（matching 095 DOOM 描述 "attack capacity" 改变）
             return Optional.empty();
         }
         final Optional<User> targetResult = field.getUserPool().getById(hateId);
