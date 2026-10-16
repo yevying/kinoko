@@ -93,6 +93,8 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
         final WildHunterInfo whi = characterDataSerializer.deserializeWildHunterInfo(getJsonObject(rs, WILD_HUNTER_INFO));
         cd.setWildHunterInfo(whi);
 
+        cd.setMonsterBookCards(characterDataSerializer.deserializeMonsterBookCards(getJsonObject(rs, MONSTER_BOOK_INFO)));
+
         cd.setItemSnCounter(new AtomicInteger(rs.getInt(ITEM_SN_COUNTER)));
         cd.setFriendMax(rs.getInt(FRIEND_MAX));
         cd.setPartyId(rs.getInt(PARTY_ID));
@@ -242,6 +244,7 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
                         MINIGAME_RECORD + ", " +
                         MAP_TRANSFER_INFO + ", " +
                         WILD_HUNTER_INFO + ", " +
+                        MONSTER_BOOK_INFO + ", " +
                         ITEM_SN_COUNTER + ", " +
                         FRIEND_MAX + ", " +
                         PARTY_ID + ", " +
@@ -249,7 +252,7 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
                         CREATION_TIME + ", " +
                         MAX_LEVEL_TIME + ", " +
                         cumulativeExp + ", " +
-                        jobCategory + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        jobCategory + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )) {
             int i = 1;
             ps.setInt(i++, cd.getCharacterId());
@@ -272,6 +275,7 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
             setJsonObject(ps, i++, characterDataSerializer.serializeMiniGameRecord(cd.getMiniGameRecord()));
             setJsonObject(ps, i++, characterDataSerializer.serializeMapTransferInfo(cd.getMapTransferInfo()));
             setJsonObject(ps, i++, characterDataSerializer.serializeWildHunterInfo(cd.getWildHunterInfo()));
+            setJsonObject(ps, i++, characterDataSerializer.serializeMonsterBookCards(cd.getMonsterBookCards()));
             ps.setInt(i++, cd.getItemSnCounter().get());
             ps.setInt(i++, cd.getFriendMax());
             ps.setInt(i++, cd.getPartyId());
@@ -312,6 +316,7 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
                         MINIGAME_RECORD + " = ?," +
                         MAP_TRANSFER_INFO + " = ?," +
                         WILD_HUNTER_INFO + " = ?," +
+                        MONSTER_BOOK_INFO + " = ?," +
                         ITEM_SN_COUNTER + " = ?," +
                         FRIEND_MAX + " = ?," +
                         PARTY_ID + " = ?," +
@@ -341,6 +346,7 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
             setJsonObject(ps, i++, characterDataSerializer.serializeMiniGameRecord(cd.getMiniGameRecord()));
             setJsonObject(ps, i++, characterDataSerializer.serializeMapTransferInfo(cd.getMapTransferInfo()));
             setJsonObject(ps, i++, characterDataSerializer.serializeWildHunterInfo(cd.getWildHunterInfo()));
+            setJsonObject(ps, i++, characterDataSerializer.serializeMonsterBookCards(cd.getMonsterBookCards()));
             ps.setInt(i++, cd.getItemSnCounter().get());
             ps.setInt(i++, cd.getFriendMax());
             ps.setInt(i++, cd.getPartyId());
@@ -424,6 +430,7 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
                             MINIGAME_RECORD + " " + JSON_TYPE + " NOT NULL, " +
                             MAP_TRANSFER_INFO + " " + JSON_TYPE + " NOT NULL, " +
                             WILD_HUNTER_INFO + " " + JSON_TYPE + " NOT NULL, " +
+                            MONSTER_BOOK_INFO + " " + JSON_TYPE + " NOT NULL, " +
                             ITEM_SN_COUNTER + " INTEGER NOT NULL, " +
                             FRIEND_MAX + " INTEGER NOT NULL, " +
                             PARTY_ID + " INTEGER NOT NULL, " +
@@ -433,6 +440,12 @@ public final class SqliteCharacterAccessor extends SqliteAccessor implements Cha
                             cumulativeExp + " BIGINT NOT NULL, " +
                             jobCategory + " INTEGER NOT NULL)"
             );
+
+            // 兼容旧库：新增怪物手册列（列已存在时忽略）
+            try {
+                s.executeUpdate("ALTER TABLE " + tableName + " ADD COLUMN " + MONSTER_BOOK_INFO + " " + JSON_TYPE + " NOT NULL DEFAULT '{}'");
+            } catch (SQLException ignored) {
+            }
 
             s.executeUpdate(
                     "CREATE INDEX IF NOT EXISTS idx_character_account_id ON " +

@@ -22,6 +22,8 @@ import kinoko.server.cashshop.Gift;
 import kinoko.server.field.InstanceFieldStorage;
 import kinoko.server.guild.GuildRequest;
 import kinoko.server.header.InHeader;
+import kinoko.server.header.OutHeader;
+import kinoko.server.packet.OutPacket;
 import kinoko.server.memo.Memo;
 import kinoko.server.messenger.MessengerRequest;
 import kinoko.server.migration.MigrationInfo;
@@ -167,6 +169,13 @@ public final class MigrationHandler {
             user.validateStat();
             user.write(WvsContext.setGender(user.getGender()));
             user.write(WvsContext.resetTownPortal());
+
+            // Replay monster book collection
+            for (int mobId : characterData.getMonsterBookCards().keySet()) {
+                final OutPacket outPacket = OutPacket.of(OutHeader.MonsterBookSetCard);
+                outPacket.encodeInt(mobId);
+                user.write(outPacket);
+            }
 
             // Resolve user field
             final int fieldId = user.getCharacterStat().getPosMap();

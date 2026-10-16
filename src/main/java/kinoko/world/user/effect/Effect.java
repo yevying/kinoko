@@ -117,6 +117,10 @@ public class Effect implements Encodable {
         return new Effect(EffectType.QuestComplete);
     }
 
+    public static Effect monsterBookCardGet() {
+        return new Effect(EffectType.MonsterBookCardGet);
+    }
+
     public static Effect soulStoneUse() {
         return new Effect(EffectType.SoulStoneUse);
     }

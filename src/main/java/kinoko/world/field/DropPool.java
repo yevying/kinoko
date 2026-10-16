@@ -1,9 +1,14 @@
 package kinoko.world.field;
 
 import kinoko.packet.field.FieldPacket;
+import kinoko.packet.user.UserLocal;
 import kinoko.packet.world.MessagePacket;
 import kinoko.packet.world.WvsContext;
+import kinoko.provider.ItemProvider;
 import kinoko.provider.QuestProvider;
+import kinoko.provider.item.ItemInfoType;
+import kinoko.server.header.OutHeader;
+import kinoko.server.packet.OutPacket;
 import kinoko.provider.map.Foothold;
 import kinoko.provider.quest.QuestInfo;
 import kinoko.util.Rect;
@@ -17,6 +22,7 @@ import kinoko.world.item.InventoryOperation;
 import kinoko.world.quest.QuestRecord;
 import kinoko.world.quest.QuestState;
 import kinoko.world.user.User;
+import kinoko.world.user.effect.Effect;
 import kinoko.world.user.stat.Stat;
 
 import java.time.Instant;
@@ -179,6 +185,25 @@ public final class DropPool extends FieldObjectPool<Drop> {
             user.write(WvsContext.statChanged(Stat.MONEY, im.getMoney(), false));
             user.write(MessagePacket.pickUpMoney(money, false));
         } else {
+            // Monster book cards (238xxxx): consumed on pickup, only recorded in the collection
+            final int itemId = drop.getItem().getItemId();
+            if (itemId / 10000 == 238) {
+                final int mobId = ItemProvider.getItemInfo(itemId)
+                        .map(info -> info.getInfo(ItemInfoType.mob))
+                        .orElse(0);
+                if (mobId > 0) {
+                    final var cards = user.getCharacterData().getMonsterBookCards();
+                    final boolean firstTime = !cards.containsKey(mobId);
+                    cards.merge(mobId, 1, Integer::sum);
+                    if (firstTime) {
+                        final OutPacket outPacket = OutPacket.of(OutHeader.MonsterBookSetCard);
+                        outPacket.encodeInt(mobId);
+                        user.write(outPacket);
+                        user.write(UserLocal.effect(Effect.monsterBookCardGet()));
+                    }
+                }
+                return;
+            }
             final Optional<List<InventoryOperation>> addItemResult = im.addItem(drop.getItem());
             if (addItemResult.isPresent()) {
                 user.write(WvsContext.inventoryOperation(addItemResult.get(), false));

@@ -116,7 +116,10 @@ public enum ItemInfoType {
     time,
 
     recoveryHP,
-    recoveryMP;
+    recoveryMP,
+
+    // Monster book card
+    mob;
 
     private static final Map<String, ItemInfoType> nameMap;
 

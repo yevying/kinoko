@@ -35,6 +35,8 @@ public final class CharacterData implements Encodable {
     private CoupleRecord coupleRecord;
     private MapTransferInfo mapTransferInfo;
     private WildHunterInfo wildHunterInfo;
+    // 怪物手册收集记录：mobId -> 卡片数量 (matching reference: CMonsterBookMan)
+    private Map<Integer, Integer> monsterBookCards = new HashMap<>();
     private AtomicInteger itemSnCounter;
     private int friendMax;
     private int partyId;
@@ -128,6 +130,14 @@ public final class CharacterData implements Encodable {
 
     public void setWildHunterInfo(WildHunterInfo wildHunterInfo) {
         this.wildHunterInfo = wildHunterInfo;
+    }
+
+    public Map<Integer, Integer> getMonsterBookCards() {
+        return monsterBookCards;
+    }
+
+    public void setMonsterBookCards(Map<Integer, Integer> monsterBookCards) {
+        this.monsterBookCards = monsterBookCards;
     }
 
     public AtomicInteger getItemSnCounter() {

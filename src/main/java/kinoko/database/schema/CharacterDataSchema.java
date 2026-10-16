@@ -21,6 +21,7 @@ public final class CharacterDataSchema {
     public static final String MINIGAME_RECORD = "minigame_record";
     public static final String MAP_TRANSFER_INFO = "map_transfer_info";
     public static final String WILD_HUNTER_INFO = "wild_hunter_info";
+    public static final String MONSTER_BOOK_INFO = "monster_book_info";
     public static final String ITEM_SN_COUNTER = "item_sn_counter";
     public static final String FRIEND_MAX = "friend_max";
     public static final String PARTY_ID = "party_id";

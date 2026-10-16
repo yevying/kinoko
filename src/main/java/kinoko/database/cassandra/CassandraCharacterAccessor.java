@@ -98,6 +98,13 @@ public final class CassandraCharacterAccessor extends CassandraAccessor implemen
         final WildHunterInfo whi = characterDataSerializer.deserializeWildHunterInfo(getJsonObject(row, WILD_HUNTER_INFO));
         cd.setWildHunterInfo(whi);
 
+        // 怪物手册收集记录（旧表无此列时为空）
+        try {
+            cd.setMonsterBookCards(characterDataSerializer.deserializeMonsterBookCards(getJsonObject(row, MONSTER_BOOK_INFO)));
+        } catch (Exception ignored) {
+            cd.setMonsterBookCards(new java.util.HashMap<>());
+        }
+
         cd.setItemSnCounter(new AtomicInteger(row.getInt(ITEM_SN_COUNTER)));
         cd.setFriendMax(row.getInt(FRIEND_MAX));
         cd.setPartyId(row.getInt(PARTY_ID));
@@ -245,6 +252,7 @@ public final class CassandraCharacterAccessor extends CassandraAccessor implemen
                         .setColumn(MINIGAME_RECORD, literalJsonObject(characterDataSerializer.serializeMiniGameRecord(cd.getMiniGameRecord())))
                         .setColumn(MAP_TRANSFER_INFO, literalJsonObject(characterDataSerializer.serializeMapTransferInfo(cd.getMapTransferInfo())))
                         .setColumn(WILD_HUNTER_INFO, literalJsonObject(characterDataSerializer.serializeWildHunterInfo(cd.getWildHunterInfo())))
+                        .setColumn(MONSTER_BOOK_INFO, literalJsonObject(characterDataSerializer.serializeMonsterBookCards(cd.getMonsterBookCards())))
                         .setColumn(ITEM_SN_COUNTER, literal(cd.getItemSnCounter().get()))
                         .setColumn(FRIEND_MAX, literal(cd.getFriendMax()))
                         .setColumn(PARTY_ID, literal(cd.getPartyId()))
@@ -320,6 +328,7 @@ public final class CassandraCharacterAccessor extends CassandraAccessor implemen
                         .withColumn(MINIGAME_RECORD, JSON_TYPE)
                         .withColumn(MAP_TRANSFER_INFO, JSON_TYPE)
                         .withColumn(WILD_HUNTER_INFO, JSON_TYPE)
+                        .withColumn(MONSTER_BOOK_INFO, JSON_TYPE)
                         .withColumn(CONFIG, JSON_TYPE)
                         .withColumn(ITEM_SN_COUNTER, DataTypes.INT)
                         .withColumn(FRIEND_MAX, DataTypes.INT)
@@ -329,6 +338,8 @@ public final class CassandraCharacterAccessor extends CassandraAccessor implemen
                         .withColumn(MAX_LEVEL_TIME, DataTypes.TIMESTAMP)
                         .build()
         );
+        // 兼容旧表：新增怪物手册列
+        session.execute("ALTER TABLE " + keyspace + "." + tableName + " ADD IF NOT EXISTS " + MONSTER_BOOK_INFO + " text");
         session.execute(
                 SchemaBuilder.createIndex()
                         .ifNotExists()

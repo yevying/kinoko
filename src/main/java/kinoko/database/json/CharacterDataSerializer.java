@@ -127,4 +127,20 @@ public final class CharacterDataSerializer implements JsonSerializer<CharacterDa
     public WildHunterInfo deserializeWildHunterInfo(JSONObject object) {
         return wildHunterInfoSerializer.deserialize(object);
     }
+
+    public JSONObject serializeMonsterBookCards(Map<Integer, Integer> cards) {
+        final JSONObject object = new JSONObject();
+        for (var entry : cards.entrySet()) {
+            object.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return object;
+    }
+
+    public Map<Integer, Integer> deserializeMonsterBookCards(JSONObject object) {
+        final Map<Integer, Integer> cards = new HashMap<>();
+        for (var entry : object.entrySet()) {
+            cards.put(Integer.parseInt(entry.getKey()), ((Number) entry.getValue()).intValue());
+        }
+        return cards;
+    }
 }
