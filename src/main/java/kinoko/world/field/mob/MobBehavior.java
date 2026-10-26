@@ -301,24 +301,33 @@ public final class MobBehavior {
             }
         }
 
-        // 方向决策（每 tick 递减，归零重选）
-        moveTick--;
-        if (moveTick <= 0) {
-            decide();
-        }
-
-        // 推进
-        // Doom 变身蜗牛的飞行怪不再飞行（matching reference: 095 CMob::OnDoomed — 变身后
-        // 移动方式变为地面行走，速度取蜗牛模板）：先坠落落到下方平台，落地后走 walkStep
-        //（effectiveWalkSpeedPx 已取蜗牛速度）。Doom 到期后 decide() 重新选 ACT_FLY 恢复飞行。
-        if (mob.getTemplate().isFlying() && !mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
-            flyStep();
-        } else if (mob.getTemplate().isFlying() && !falling && !isGrounded()) {
-            startFall(mob.getX());
-        } else if (falling) {
-            fallStep();
+        // 蜘蛛网(Shadow Web 4111003 / 14111001)：使怪物无法移动（matching reference: 095
+        // Shadow Web "traps a monster in a web, preventing it from moving" — 仅限制移动，
+        // 不禁止攻击：上面的停步出手流程与 fireCombat 照常执行，此处跳过 decide/推进并
+        // 强制 stand 姿态，由下方通用批次累积逻辑广播原地 stand 路径；Web 到期后本分支
+        // 不再命中，decide() 重选 move/chase/fly，姿态切换触发 flush 自动恢复移动。
+        if (mob.getMobStat().hasOption(MobTemporaryStat.Web)) {
+            action = ACT_STAND;
         } else {
-            walkStep();
+            // 方向决策（每 tick 递减，归零重选）
+            moveTick--;
+            if (moveTick <= 0) {
+                decide();
+            }
+
+            // 推进
+            // Doom 变身蜗牛的飞行怪不再飞行（matching reference: 095 CMob::OnDoomed — 变身后
+            // 移动方式变为地面行走，速度取蜗牛模板）：先坠落落到下方平台，落地后走 walkStep
+            //（effectiveWalkSpeedPx 已取蜗牛速度）。Doom 到期后 decide() 重新选 ACT_FLY 恢复飞行。
+            if (mob.getTemplate().isFlying() && !mob.getMobStat().hasOption(MobTemporaryStat.Doom)) {
+                flyStep();
+            } else if (mob.getTemplate().isFlying() && !falling && !isGrounded()) {
+                startFall(mob.getX());
+            } else if (falling) {
+                fallStep();
+            } else {
+                walkStep();
+            }
         }
 
         // === 批量累积（方案B） ===
