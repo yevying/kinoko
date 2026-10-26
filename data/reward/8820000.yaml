@@ -1,0 +1,18 @@
+# Pink Bean (8820000) - horde checkpoint boss signature drops (design doc 3.3 / 10.4)
+
+rewards:
+  - [ 0, 40000, 50000, 0.400000 ]
+  - [ 4000268, 1, 1, 1.000000 ] # signature drop
+  - [ 2000004, 1, 4, 0.040000 ] # Elixir
+  - [ 2000005, 1, 4, 0.040000 ] # Power Elixir
+  - [ 2020015, 1, 4, 0.003000 ] # Sunset Dew
+  - [ 2290010, 1, 1, 0.030000 ] # [Mastery Book] Brandish
+  - [ 2290022, 1, 1, 0.030000 ] # [Mastery Book] Berserk
+  - [ 2290040, 1, 1, 0.030000 ] # [Mastery Book] Meteor Shower
+  - [ 2290046, 1, 1, 0.030000 ] # [Mastery Book] Blizzard
+  - [ 2290048, 1, 1, 0.030000 ] # [Mastery Book] Genesis
+  - [ 2290052, 1, 1, 0.030000 ] # [Mastery Book] Sharp Eyes
+  - [ 2290084, 1, 1, 0.030000 ] # [Mastery Book] Triple Throw
+  - [ 2290090, 1, 1, 0.030000 ] # [Mastery Book] Boomerang Step
+  - [ 2290106, 1, 1, 0.030000 ] # [Mastery Book] Barrage
+  - [ 2290119, 1, 1, 0.030000 ] # [Mastery Book] Battleship Cannon

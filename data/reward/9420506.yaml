@@ -1,0 +1,24 @@
+# Stirge / Bat-Moth (9420506) - horde checkpoint boss signature drops (design doc 3.3 / 10.4)
+
+rewards:
+  - [ 0, 56, 69, 0.400000 ]
+  - [ 4000042, 1, 1, 1.000000 ] # signature drop
+  - [ 1002035, 1, 1, 0.002000 ] # Pink Jester
+  - [ 1002179, 1, 1, 0.002000 ] # Brown Burgler
+  - [ 1032000, 1, 1, 0.001800 ] # Weighted Earrings
+  - [ 1040021, 1, 1, 0.002000 ] # Red Hwarang Shirt
+  - [ 1040081, 1, 1, 0.002000 ] # White Piette
+  - [ 1050030, 1, 1, 0.001800 ] # Blue Chaos Robe
+  - [ 1050031, 1, 1, 0.001800 ] # White Chaos Robe
+  - [ 1060070, 1, 1, 0.002000 ] # Blue Piette Pants
+  - [ 1312007, 1, 1, 0.001800 ] # Blue Counter
+  - [ 1432003, 1, 1, 0.001287 ] # Nakamaki
+  - [ 2000001, 1, 1, 0.040000 ] # Orange Potion
+  - [ 2000003, 1, 1, 0.040000 ] # Blue Potion
+  - [ 2002000, 1, 1, 0.010000 ] # Dexterity Potion
+  - [ 2020028, 1, 1, 0.020000 ] # Chocolate
+  - [ 2044302, 1, 1, 0.001000 ] # Scroll for Spear for ATT 10%
+  - [ 2060000, 30, 38, 0.010000 ] # Arrow for Bow
+  - [ 2061000, 30, 38, 0.010000 ] # Arrow for Crossbow
+  - [ 4010002, 1, 1, 0.000300 ] # Mithril Ore
+  - [ 4020003, 1, 1, 0.000300 ] # Emerald Ore

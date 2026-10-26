@@ -1,0 +1,5 @@
+# Mushroom King (9300187) - horde checkpoint boss signature drops (design doc 3.3 / 10.4)
+
+rewards:
+  - [ 0, 240, 440, 0.900000 ]
+  - [ 4000012, 1, 1, 1.000000 ] # signature drop
