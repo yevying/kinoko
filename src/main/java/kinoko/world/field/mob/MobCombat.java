@@ -11,6 +11,7 @@ import kinoko.provider.skill.SkillInfo;
 import kinoko.provider.skill.SkillStat;
 import kinoko.world.GameConstants;
 import kinoko.world.field.Field;
+import kinoko.world.job.explorer.Thief;
 import kinoko.world.skill.HitInfo;
 import kinoko.world.user.User;
 import kinoko.util.Util;
@@ -53,11 +54,52 @@ public final class MobCombat {
         hitInfo.stance = 0;
         hitInfo.damage = calcAttackDamage(mob, attack, target);
 
-        // 攻击携带的 disease 技能（stun/poison 等 CTS）与 mpBurn
-        HitHandler.handleMobAttack(target, hitInfo);
-        HitHandler.handleHit(target, hitInfo);
+        // 影之替身(4120002/4220002)被动闪避：命中时按 prop% 概率将本次伤害完全无效化，
+        // 设 damage=-1 + missSkillId → UserRemote.hit 编码 missSkillId → 客户端 OnRemoteHit
+        // 播放 skill special 特效 + 微笑表情（matching reference: 095 SetDamaged_9343C0 卷 870-940）。
+        // 闪避成功时跳过 handleMobAttack/handleHit：不扣血、不施加 mob 疾病，且避免 deadlyAttack
+        // 分支把 -1 覆盖回 hp-1。
+        if (hitInfo.damage > 0) {
+            final int shiftSkillId = rollShadowShifter(target);
+            if (shiftSkillId != 0) {
+                hitInfo.damage = -1;
+                hitInfo.missSkillId = shiftSkillId;
+            }
+        }
+
+        if (hitInfo.damage != -1) {
+            // 攻击携带的 disease 技能（stun/poison 等 CTS）与 mpBurn
+            HitHandler.handleMobAttack(target, hitInfo);
+            HitHandler.handleHit(target, hitInfo);
+        }
 
         field.broadcastPacket(UserRemote.hit(target, hitInfo));
+    }
+
+    /**
+     * 影之替身被动闪避判定。命中时按 prop% 概率闪避，返回触发闪避的技能 ID，未触发返回 0。
+     * (matching reference: 095 CUserLocal::SetDamaged_9343C0 — nJob∈{412,422} &&
+     *  GetSkillLevel(skill)>0 && rand%100 < nProp → nDamage=-1, bDamageMissed=1；
+     *  095 仅对 !CMobTemplate::bCannotEvade 的怪物生效，本项目模板无该字段，按恒可闪避移植)
+     */
+    private static int rollShadowShifter(User target) {
+        final int skillId = switch (target.getJob()) {
+            case 411, 412 -> Thief.SHADOW_SHIFTER_NL;   // 无影人/夜使者 → 4120002
+            case 421, 422 -> Thief.SHADOW_SHIFTER_SHAD; // 独行客/侠盗 → 4220002
+            default -> 0;
+        };
+        if (skillId == 0) {
+            return 0;
+        }
+        final int slv = target.getSkillLevel(skillId);
+        if (slv <= 0) {
+            return 0;
+        }
+        final int prop = target.getSkillStatValue(skillId, SkillStat.prop);
+        if (prop <= 0) {
+            return 0;
+        }
+        return Util.succeedProp(prop) ? skillId : 0; // random(0,100) < prop
     }
 
     /** 服务端权威技能释放：扣 MP、设置冷却、应用技能效果。 */
